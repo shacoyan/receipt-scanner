@@ -10,6 +10,18 @@ const CATEGORY_MAP = {
   '通信費': 929160680,   // TODO: freeeに科目追加後に更新
 };
 
+const SECTION_MAP = {
+  'スーク': 3415042,
+  '金魚': 3449507,
+  'KITUNE': 3415041,
+  'Goodbye': 3448649,
+  'LR': 3423764,
+  '狛犬': 3834777,
+  'moumou': 3450115,
+  'SABABA HQ': 3923010,
+  '大輝HQ': 3923009,
+};
+
 const DEFAULT_ACCOUNT_ITEM_ID = 929160680; // 雑費
 const TAX_CODE = 136; // 課対仕入10%
 const WALLET_ID = 6815911;
@@ -46,7 +58,7 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { date, amount, store, category, memo, receipt_id } = request.body;
+  const { date, amount, store, category, receipt_id, section_id } = request.body;
 
   // バリデーション: 必須項目チェック
   const errors = [];
@@ -115,14 +127,16 @@ export default async function handler(request, response) {
   try {
     // 1. Supabaseからレシート画像を取得してfreeeにアップロード
     let freeeReceiptId = null;
+    let receipt = null;
     if (receipt_id) {
       const supabase = await getSupabase();
-      const { data: receipt } = await supabase
+      const { data: receiptData } = await supabase
         .from('receipts')
-        .select('storage_path, mime_type, original_filename')
+        .select('storage_path, mime_type, original_filename, section_id')
         .eq('id', receipt_id)
         .single();
 
+      receipt = receiptData;
       if (receipt) {
         const { data: fileData } = await supabase.storage
           .from('receipts')
@@ -166,15 +180,19 @@ export default async function handler(request, response) {
       });
       if (!createRes.ok) {
         const err = await createRes.text();
-        console.warn('Partner create failed (続行します):', err);
-        // 権限不足等で作成失敗してもpartnerIdなしで続行
+        console.error('Partner create failed:', err);
+        return response.status(500).json({ error: '取引先の作成に失敗しました', detail: err });
       } else {
         const createData = await createRes.json();
         partnerId = createData.partner?.id || null;
       }
     }
 
-    // 3. 取引を作成
+    // 3. 部門IDの解決
+    const sectionName = section_id || (receipt_id && receipt ? receipt.section_id : null);
+    const freeSectionId = sectionName ? SECTION_MAP[sectionName] : null;
+
+    // 4. 取引を作成
     const dealBody = {
       company_id: companyId,
       issue_date: date,
@@ -183,7 +201,7 @@ export default async function handler(request, response) {
         {
           account_item_id: accountItemId,
           amount,
-          description: `${store || ''} ${memo || ''}`.trim(),
+          description: `${store || ''}`,
           tax_code: TAX_CODE,
         },
       ],
@@ -199,6 +217,10 @@ export default async function handler(request, response) {
 
     if (partnerId) {
       dealBody.partner_id = partnerId;
+    }
+
+    if (freeSectionId) {
+      dealBody.details[0].section_id = freeSectionId;
     }
 
     if (freeeReceiptId) {
