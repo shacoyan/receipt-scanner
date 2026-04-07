@@ -22,13 +22,13 @@ export default async function handler(req, res) {
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch up to 10 pending receipts (oldest first)
+    // Fetch up to 20 pending receipts (oldest first)
     const { data: pendingReceipts, error: fetchError } = await supabase
       .from('receipts')
       .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
-      .limit(10);
+      .limit(20);
 
     if (fetchError) {
       throw new Error(`Fetch pending error: ${fetchError.message}`);
