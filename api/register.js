@@ -110,8 +110,8 @@ export default async function handler(request, response) {
 
   // 店名の妥当性チェック
   if (store) {
-    if (store.length <= 2) {
-      errors.push('店名が短すぎます');
+    if (store.length < 1) {
+      errors.push('店名が空です');
     }
   }
 
@@ -122,6 +122,9 @@ export default async function handler(request, response) {
   }
 
   const companyId = Number(process.env.FREEE_COMPANY_ID);
+  if (!companyId || Number.isNaN(companyId)) {
+    return response.status(500).json({ error: 'FREEE_COMPANY_ID が設定されていません' });
+  }
   const accountItemId = CATEGORY_MAP[category] || DEFAULT_ACCOUNT_ITEM_ID;
 
   try {
@@ -130,17 +133,24 @@ export default async function handler(request, response) {
     let receipt = null;
     if (receipt_id) {
       const supabase = await getSupabase();
-      const { data: receiptData } = await supabase
+      const { data: receiptData, error: receiptSelectError } = await supabase
         .from('receipts')
         .select('storage_path, mime_type, original_filename, section_id')
         .eq('id', receipt_id)
         .single();
 
+      if (receiptSelectError) {
+        console.error('Receipt select error:', receiptSelectError.message);
+      }
       receipt = receiptData;
       if (receipt) {
-        const { data: fileData } = await supabase.storage
+        const { data: fileData, error: downloadError } = await supabase.storage
           .from('receipts')
           .download(receipt.storage_path);
+
+        if (downloadError) {
+          console.error('Receipt download error:', downloadError.message);
+        }
 
         if (fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());

@@ -145,7 +145,7 @@ export default async function handler(req, res) {
         const parsed = JSON.parse(jsonStr);
         const resultJson = {
           date: parsed.date || null,
-          amount: typeof parsed.amount === 'number' ? parsed.amount : (parsed.amount ? parseInt(parsed.amount, 10) : null),
+          amount: typeof parsed.amount === 'number' ? parsed.amount : (parsed.amount ? (Number.isNaN(parseInt(parsed.amount, 10)) ? null : parseInt(parsed.amount, 10)) : null),
           store: parsed.store || null,
           category: parsed.category || null,
         };

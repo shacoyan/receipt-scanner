@@ -52,6 +52,8 @@ const DropZone: React.FC<DropZoneProps> = ({ onFiles }) => {
     if (e.target.files) {
       handleFiles(e.target.files);
     }
+    // 同じファイルを再選択できるようにvalueをリセット
+    e.target.value = '';
   };
 
   return (

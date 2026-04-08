@@ -71,6 +71,19 @@ export async function refreshToken() {
   return data.access_token;
 }
 
+// トークンリフレッシュの重複実行を防ぐ
+let _refreshPromise = null;
+
+async function refreshTokenOnce() {
+  if (_refreshPromise) {
+    return _refreshPromise;
+  }
+  _refreshPromise = refreshToken().finally(() => {
+    _refreshPromise = null;
+  });
+  return _refreshPromise;
+}
+
 export async function freeeApiFetch(url, options = {}) {
   const headers = { ...options.headers };
   headers['Authorization'] = `Bearer ${getAccessToken()}`;
@@ -81,7 +94,7 @@ export async function freeeApiFetch(url, options = {}) {
   if (res.status === 401) {
     console.log('freee: 401を受信、トークンをリフレッシュします...');
     try {
-      const newToken = await refreshToken();
+      const newToken = await refreshTokenOnce();
       const retryHeaders = { ...options.headers };
       retryHeaders['Authorization'] = `Bearer ${newToken}`;
       return fetch(url, { ...options, headers: retryHeaders });

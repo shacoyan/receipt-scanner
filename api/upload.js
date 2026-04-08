@@ -93,6 +93,10 @@ export default async function handler(req, res) {
       }
     }
 
+    if (ids.length === 0) {
+      return res.status(400).json({ error: '有効な画像ファイルがありませんでした（非画像ファイルやアップロードエラー）' });
+    }
+
     return res.status(200).json({ success: true, count: ids.length, ids });
   } catch (error) {
     console.error('Upload error:', error.message, error.stack);

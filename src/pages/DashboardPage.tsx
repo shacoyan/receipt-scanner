@@ -16,6 +16,7 @@ interface Receipt {
   image_url: string;
   status: ReceiptStatus;
   result_json: ReceiptResult | null;
+  error_message: string | null;
   section_id: string | null;
   created_at: string;
 }
@@ -533,8 +534,35 @@ const DashboardPage: React.FC = () => {
 
         {(r.status === 'pending' || r.status === 'processing') ? (
           <p className="text-gray-400 italic text-sm">解析中...</p>
-        ) : r.status === 'error' ? (
-          <p className="text-red-500 text-sm">読取失敗</p>
+        ) : r.status === 'error' && !r.result_json ? (
+          <p className="text-red-500 text-sm">{r.error_message || '読取失敗'}</p>
+        ) : r.status === 'error' && r.result_json ? (
+          <>
+            <p className="text-red-500 text-xs mb-2">{r.error_message || 'エラー'}</p>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="text-gray-400 text-xs">日付</span>
+                <div>{renderEditableCell(result?.date || '-', 'date', isEditing)}</div>
+              </div>
+              <div>
+                <span className="text-gray-400 text-xs">店名</span>
+                <div>{renderEditableCell(result?.store || '-', 'store', isEditing)}</div>
+              </div>
+              <div>
+                <span className="text-gray-400 text-xs">金額</span>
+                <div>
+                  {isEditing
+                    ? renderEditableCell(String(result?.amount ?? ''), 'amount', true)
+                    : <span className="font-medium text-gray-700">{result?.amount != null ? formatYen(result.amount) : '-'}</span>
+                  }
+                </div>
+              </div>
+              <div>
+                <span className="text-gray-400 text-xs">勘定科目</span>
+                <div>{renderEditableCell(result?.category || '-', 'category', isEditing)}</div>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
