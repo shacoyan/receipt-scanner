@@ -4,6 +4,62 @@ import DropZone from '../components/DropZone';
 
 const SECTIONS = ['スーク', '金魚', 'KITUNE', 'Goodbye', 'LR', '狛犬', 'moumou', 'SABABA HQ', '大輝HQ'];
 
+const MAX_DIMENSION = 1600;
+const JPEG_QUALITY = 0.7;
+const BATCH_SIZE = 5;
+
+/**
+ * 画像を Canvas API で圧縮し、JPEG Blob を返す。
+ * - 長辺が MAX_DIMENSION を超える場合のみリサイズ
+ * - 元が JPEG/PNG/WebP いずれでも出力は JPEG
+ * - 圧縮後のファイル名は元のファイル名を維持（拡張子は .jpg に変更）
+ */
+async function compressImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+
+      // 長辺が MAX_DIMENSION 以下ならリサイズ不要だが、JPEG再圧縮はする
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = Math.round(height * (MAX_DIMENSION / width));
+          width = MAX_DIMENSION;
+        } else {
+          width = Math.round(width * (MAX_DIMENSION / height));
+          height = MAX_DIMENSION;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas context の取得に失敗しました'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error('画像の圧縮に失敗しました'));
+            return;
+          }
+          // 元のファイル名から拡張子を .jpg に置換
+          const newName = file.name.replace(/\.[^.]+$/, '.jpg');
+          resolve(new File([blob], newName, { type: 'image/jpeg' }));
+        },
+        'image/jpeg',
+        JPEG_QUALITY
+      );
+    };
+    img.onerror = () => reject(new Error(`画像の読み込みに失敗: ${file.name}`));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -19,21 +75,36 @@ const UploadPage: React.FC = () => {
     setUploadCount(files.length);
 
     try {
-      const formData = new FormData();
-      for (const file of files) {
-        formData.append('receipts', file);
-      }
-      if (sectionId) {
-        formData.append('section_id', sectionId);
+      // Step 1: 全画像を圧縮
+      const compressed = await Promise.all(files.map(compressImage));
+
+      // Step 2: BATCH_SIZE 枚ずつに分割
+      const batches: File[][] = [];
+      for (let i = 0; i < compressed.length; i += BATCH_SIZE) {
+        batches.push(compressed.slice(i, i + BATCH_SIZE));
       }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // Step 3: バッチごとに順次送信（並列だとサーバー負荷が高いため直列）
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const formData = new FormData();
+        for (const file of batch) {
+          formData.append('receipts', file);
+        }
+        if (sectionId) {
+          formData.append('section_id', sectionId);
+        }
 
-      if (!response.ok) {
-        throw new Error(`サーバーエラー: ${response.status}`);
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `サーバーエラー: ${response.status}（バッチ ${i + 1}/${batches.length}）`
+          );
+        }
       }
 
       setDone(true);
