@@ -232,7 +232,7 @@ const UploadPage: React.FC = () => {
         {/* Footer */}
         {!done && (
           <p className="mt-8 text-center text-xs text-gray-400">
-            対応形式: JPEG, PNG, WebP（複数枚同時選択可）
+            対応形式: JPEG, PNG, WebP（複数枚同時選択可）<span className="mx-1.5 opacity-50">|</span><span className="opacity-50">v1.1.0</span>
           </p>
         )}
       </div>
