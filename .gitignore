@@ -3,3 +3,6 @@ dist
 .env
 .vercel
 .env*.local
+
+# freee API response containing sensitive IDs (account_item ID, tenant_id, etc.)
+scripts/output/

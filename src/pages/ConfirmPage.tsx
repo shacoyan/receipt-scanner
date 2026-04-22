@@ -28,6 +28,7 @@ const CATEGORIES = [
   '会議費',
   '通信費',
   '雑費',
+  '仕入高',
 ];
 
 const ConfirmPage: React.FC = () => {

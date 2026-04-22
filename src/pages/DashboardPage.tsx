@@ -28,7 +28,7 @@ interface ReceiptsResponse {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費'];
+const CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
 const SECTIONS = ['スーク', '金魚', 'KITUNE', 'Goodbye', 'LR', '狛犬', 'moumou', 'SABABA HQ', '大輝HQ'];
 const PAGE_LIMIT = 50;
 const AUTO_REFRESH_MS = 10_000;
@@ -273,6 +273,26 @@ const DashboardPage: React.FC = () => {
       await fetchTabCounts();
     } catch {
       alert('承認取消に失敗しました');
+    }
+  };
+
+  // ─── Bulk rerun ──────────────────────────────────────────────────────────
+  const rerunSelected = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(`選択中の${ids.length}件を再判定します。\n\n注意: すでにfreee登録済みのレシートも再判定対象に含まれる場合、再判定後に再度freee登録すると重複する可能性があります。\n\n続行しますか？`)) return;
+    try {
+      const res = await fetch('/api/receipts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'rerun' }),
+      });
+      if (!res.ok) throw new Error();
+      setSelected(new Set());
+      await fetchReceipts();
+      await fetchTabCounts();
+    } catch {
+      alert('再判定に失敗しました');
     }
   };
 
@@ -679,6 +699,17 @@ const DashboardPage: React.FC = () => {
             }`}
           >
             選択した{selected.size}件を解析済みに戻す
+          </button>
+          <button
+            onClick={rerunSelected}
+            disabled={selected.size === 0}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+              selected.size > 0
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            選択した{selected.size}件を再判定
           </button>
           <div className="flex-1" />
           <button

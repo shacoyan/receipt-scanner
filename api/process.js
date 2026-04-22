@@ -56,7 +56,34 @@ export default async function handler(req, res) {
 - 日付: YYYY-MM-DD形式。西暦で出力。存在しない日付（2月30日等）はnull。
 - 金額: 合計金額を数値のみで出力。税込合計を優先。
 - 店名: 正式な店舗名・会社名を出力。支店名も含める。
-- 勘定科目: 消耗品費・交通費・接待交際費・会議費・通信費・雑費のいずれか。
+- 勘定科目: 以下の7種類から最も適切なものを1つ選択。
+  消耗品費・交通費・接待交際費・会議費・通信費・雑費・仕入高
+
+## 勘定科目の判定ルール
+- 仕入高: 店舗運営のための食材・飲料・材料・商品仕入れ
+  - スーパー（イオン、ライフ、万代、阪急オアシス、西友 等）での食品・飲料購入
+  - 業務スーパー、コストコ での仕入れ
+  - 酒屋・カクヤス・やまや での酒類仕入れ
+  - 八百屋、肉屋、魚屋、市場 での生鮮仕入れ
+  - コンビニ（セブン、ローソン、ファミマ）での食品・飲料購入
+  - 製菓材料店、調味料・スパイス専門店
+- 接待交際費 / 交際費: 取引先・顧客・関係者との飲食・贈答
+  - レストラン、居酒屋、バー、ラウンジでの飲食（接待目的）
+  - 手土産、贈答品
+- 会議費: 社内会議・打合せでの飲食・会議室利用
+  - カフェ（スタバ、ドトール等）での打合せ
+  - 会議室・貸スペース利用料
+  - 打合せ時のテイクアウト飲食
+- 消耗品費: 文具、清掃用品、小物備品（食品以外の消耗品）
+- 交通費: タクシー、電車、バス、ガソリン、駐車場
+- 通信費: 携帯、インターネット、郵送料
+- 雑費: 上記いずれにも該当しないもの
+
+## 判定の優先順位（重要）
+以下の優先順位に従って勘定科目を判定してください：
+1. 飲食店・居酒屋・カフェでの「席に着いての飲食」→ 接待交際費 or 会議費
+2. スーパー・業務スーパー・酒屋・コンビニでの「持ち帰り食品/飲料購入」→ 仕入高
+3. 迷う場合は店舗業態を優先（「カクヤス」「業務スーパー」「ライフ」等のチェーン名が取れたら仕入高）
 
 ## 自信度の判断（重要）
 以下に該当する場合、該当項目は必ずnullにしてください：
@@ -195,14 +222,31 @@ export default async function handler(req, res) {
           }
         }
 
-        // 金額上限チェック: 3万円超
-        if (resultJson.amount != null && resultJson.amount > 30000) {
-          await supabase
-            .from('receipts')
-            .update({ status: 'error', result_json: resultJson, error_message: `金額が3万円を超えています（¥${resultJson.amount.toLocaleString()}）- 手動確認が必要` })
-            .eq('id', receipt.id);
-          errors++;
-          continue;
+        // 金額上限チェック: カテゴリ別
+        if (resultJson.amount != null) {
+          let isAmountOverLimit = false;
+          let limitMessage = '';
+          
+          if (resultJson.category === '仕入高') {
+            if (resultJson.amount > 100000) {
+              isAmountOverLimit = true;
+              limitMessage = `金額が10万円を超えています（¥${resultJson.amount.toLocaleString()}）- 手動確認が必要`;
+            }
+          } else {
+            if (resultJson.amount > 30000) {
+              isAmountOverLimit = true;
+              limitMessage = `金額が3万円を超えています（¥${resultJson.amount.toLocaleString()}）- 手動確認が必要`;
+            }
+          }
+
+          if (isAmountOverLimit) {
+            await supabase
+              .from('receipts')
+              .update({ status: 'error', result_json: resultJson, error_message: limitMessage })
+              .eq('id', receipt.id);
+            errors++;
+            continue;
+          }
         }
 
         // Save result
