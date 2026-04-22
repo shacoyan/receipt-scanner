@@ -136,6 +136,7 @@ async function main() {
       error_message: null,
     }, { count: 'exact' });
   updateQuery = applyFilters(updateQuery, args);
+  updateQuery = updateQuery.not('id', 'is', null);
 
   const { error: updateError, count: updatedCount } = await updateQuery;
 
