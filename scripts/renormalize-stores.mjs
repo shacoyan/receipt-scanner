@@ -5,9 +5,36 @@
 // 使い方:
 //   node scripts/renormalize-stores.mjs            # dry-run
 //   node scripts/renormalize-stores.mjs --apply    # 適用
-import 'dotenv/config';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { normalizeStoreName } from '../api/process.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const envPath = resolve(__dirname, '../.env');
+
+try {
+  const envContent = readFileSync(envPath, 'utf8');
+  envContent.split('\n').forEach(line => {
+    line = line.trim();
+    if (!line || line.startsWith('#')) return;
+    const eqIndex = line.indexOf('=');
+    if (eqIndex === -1) return;
+    const key = line.slice(0, eqIndex).trim();
+    let value = line.slice(eqIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  });
+} catch {
+  // .env が存在しない場合は無視（プロセス環境変数のみ利用）
+}
 
 const APPLY = process.argv.includes('--apply');
 const url = process.env.SUPABASE_URL;
