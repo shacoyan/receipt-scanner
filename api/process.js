@@ -2,7 +2,7 @@ export const config = {
   api: {
     bodyParser: false,
   },
-  maxDuration: 60,
+  maxDuration: 300,
 };
 
 export default async function handler(req, res) {
