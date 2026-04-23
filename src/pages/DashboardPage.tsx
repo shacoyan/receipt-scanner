@@ -398,13 +398,21 @@ const DashboardPage: React.FC = () => {
   // ─── Desktop table row ────────────────────────────────────────────────────
   const renderTableRow = (r: Receipt) => {
     const isEditing = editingId === r.id;
+    const isError = r.status === 'error';
     const result = isEditing && editDraft ? editDraft : r.result_json;
     const canEdit = r.status === 'done' || r.status === 'error';
 
     return (
       <tr
         key={r.id}
-        className={`border-b border-gray-100 hover:bg-indigo-50/30 transition ${isEditing ? 'bg-indigo-50/50' : ''}`}
+        className={[
+          'border-b transition',
+          isEditing
+            ? 'bg-indigo-50/50 border-gray-100'
+            : isError
+              ? 'bg-red-50/60 border-red-200 hover:bg-red-50'
+              : 'border-gray-100 hover:bg-indigo-50/30',
+        ].join(' ')}
       >
         {/* Checkbox */}
         <td className="px-3 py-3">
@@ -432,6 +440,11 @@ const DashboardPage: React.FC = () => {
         {/* Store */}
         <td className="px-3 py-3 text-sm">
           {renderEditableCell(result?.store || '-', 'store', isEditing)}
+          {isError && r.error_message && (
+            <p className="mt-1 text-xs text-red-600 font-semibold truncate max-w-[220px]" title={r.error_message}>
+              {r.error_message}
+            </p>
+          )}
         </td>
 
         {/* Amount */}
@@ -511,11 +524,19 @@ const DashboardPage: React.FC = () => {
   // ─── Mobile card ──────────────────────────────────────────────────────────
   const renderMobileCard = (r: Receipt) => {
     const isEditing = editingId === r.id;
+    const isError = r.status === 'error';
     const result = isEditing && editDraft ? editDraft : r.result_json;
     const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
 
     return (
-      <div key={r.id} className={`bg-white/80 backdrop-blur-sm rounded-xl shadow-md p-4 ${isEditing ? 'ring-2 ring-indigo-300' : ''}`}>
+      <div key={r.id} className={[
+        'backdrop-blur-sm rounded-xl shadow-md p-4 transition',
+        isEditing
+          ? 'bg-white/80 ring-2 ring-indigo-300'
+          : isError
+            ? 'bg-red-50/80 border border-red-300 shadow-red-100'
+            : 'bg-white/80',
+      ].join(' ')}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <input
@@ -555,10 +576,10 @@ const DashboardPage: React.FC = () => {
         {(r.status === 'pending' || r.status === 'processing') ? (
           <p className="text-gray-400 italic text-sm">解析中...</p>
         ) : r.status === 'error' && !r.result_json ? (
-          <p className="text-red-500 text-sm">{r.error_message || '読取失敗'}</p>
+          <p className="text-red-600 font-semibold text-sm">{r.error_message || '読取失敗'}</p>
         ) : r.status === 'error' && r.result_json ? (
           <>
-            <p className="text-red-500 text-xs mb-2">{r.error_message || 'エラー'}</p>
+            <p className="text-red-600 font-semibold text-xs mb-2">{r.error_message || 'エラー'}</p>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
                 <span className="text-gray-400 text-xs">日付</span>
