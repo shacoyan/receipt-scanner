@@ -70,19 +70,25 @@ function stripBranchSuffix(input) {
   if (!s.endsWith('店')) return s;
   if (/商店$/.test(s)) return s;
   if (/支店$/.test(s)) return s;
+  if (/本店$/.test(s)) return s;
 
-  // 空白区切り（半角/全角）で分割できる場合、最後のトークンが「店」で終わるなら丸ごと破棄
+  // 空白区切り時: 最後のトークンが「店」で終わるなら丸ごと破棄
   if (/[\s\u3000]/.test(s)) {
     const parts = s.split(/[\s\u3000]+/);
     const last = parts[parts.length - 1];
-    if (last.endsWith('店') && !/商店$/.test(last) && !/支店$/.test(last)) {
+    if (last.endsWith('店') && !/商店$/.test(last) && !/支店$/.test(last) && !/本店$/.test(last)) {
       parts.pop();
       return parts.join(' ').replace(/[・\-\s\u3000]+$/, '').trim();
     }
     return s;
   }
 
-  // 空白なし: 末尾「店」1文字のみ除去（従来通り）
+  // 空白なし: 末尾「漢字/カナ連鎖 2-8文字 + 店」を可変長除去
+  const heuristicRe = /[一-龯々〇ヶ]{2,8}店$/u;
+  if (heuristicRe.test(s)) {
+    return s.replace(heuristicRe, '').replace(/[・\-\s\u3000]+$/, '').trim();
+  }
+  // フォールバック: 末尾「店」1文字のみ除去
   return s.replace(/(?<!商)店$/, '').replace(/[・\-\s\u3000]+$/, '').trim();
 }
 
