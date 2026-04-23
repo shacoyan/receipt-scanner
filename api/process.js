@@ -11,13 +11,13 @@ export const config = {
  * - normalized: 正規形（このチェーン名で上書き）
  * - 支店名（マッチ部分より後ろの文字列）は保持する
  *
- * 例: "アブゾーイレブン西心斎橋店" → pattern が前方マッチ → "セブン-イレブン西心斎橋店"
+ * 例: "アブゾーイレブン西心斎橋店" → pattern が前方マッチ → "セブンイレブン"
  */
 const STORE_NORMALIZATION_RULES = [
-  // セブン-イレブン系（OCR 誤読も吸収）
+  // セブンイレブン系（OCR 誤読・ハイフン揺れ U+2010/U+2012/U+2013/U+2014/U+2015/U+2212/全角ダッシュ 吸収）
   {
-    pattern: /^(セブン[‐ー\-–—]?イレブン|セブンイレブン|7[-\s]?Eleven|アブゾー?イレブン|アクセブン[ー\-]?イレブン)/i,
-    normalized: 'セブン-イレブン',
+    pattern: /^(セブン[‐ー\-–—−]?イレブン|7[-\s]?Eleven|SEVEN[-\s]?ELEVEN|アブゾー?イレブン|アクセブン[ー\-]?イレブン)/i,
+    normalized: 'セブンイレブン',
   },
   // ファミリーマート系
   {
@@ -26,7 +26,7 @@ const STORE_NORMALIZATION_RULES = [
   },
   // ローソン系
   {
-    pattern: /^(ローソン(?![銀])|LAWSON)/i,
+    pattern: /^(ローソン(?!銀行)|LAWSON)/i,
     normalized: 'ローソン',
   },
   // リカーマウンテン系
@@ -39,13 +39,45 @@ const STORE_NORMALIZATION_RULES = [
     pattern: /^(ダイソー|DAISO|Daiso|THE\s*DAISO)/i,
     normalized: 'ダイソー',
   },
+  // アークランズ系（アークランド表記揺れを統一）
+  {
+    pattern: /^(アークランズ|アークランド)/,
+    normalized: 'アークランズ',
+  },
+  // 業務スーパー系
+  {
+    pattern: /^(業務スーパー|業務用スーパー)/,
+    normalized: '業務スーパー',
+  },
+  // 久世福商店系（チェーン名自体に「商店」を含むため、normalized 返却で商店保護が担保される）
+  {
+    pattern: /^(久世福商店)/,
+    normalized: '久世福商店',
+  },
 ];
+
+/**
+ * 末尾「〜店」を除去する。ただし「商店」は保護する。
+ * - 空文字 / 1文字以下は原値返し
+ * - 末尾が「店」でなければそのまま
+ * - 末尾が「商店」なら保護（原値返し）
+ * - それ以外は末尾「店」1文字のみ除去し trim
+ */
+function stripBranchSuffix(input) {
+  if (!input || typeof input !== 'string') return input;
+  const s = input.trim();
+  if (s.length <= 1) return s;
+  if (!s.endsWith('店')) return s;
+  if (/商店$/.test(s)) return s;
+  if (/支店$/.test(s)) return s;
+  return s.replace(/(?<!商)店$/, '').replace(/[・\-\s\u3000]+$/, '').trim();
+}
 
 /**
  * 店名を正規化する
  * - チェーン名部分をマップに従って統一
- * - チェーン名後の支店名は保持
- * - どのルールにもマッチしなければ原文を返す
+ * - ルールマッチ時: suffix が「店」で終わり、かつ「商店」でなければ suffix 全体を破棄し normalized のみ返す
+ * - ルール非マッチ時: stripBranchSuffix で末尾「店」1文字のみ除去（商店保護）
  */
 function normalizeStoreName(rawStore) {
   if (!rawStore || typeof rawStore !== 'string') return rawStore;
@@ -54,12 +86,20 @@ function normalizeStoreName(rawStore) {
     const m = trimmed.match(rule.pattern);
     if (m) {
       const matched = m[0];
-      const suffix = trimmed.slice(matched.length).trimStart();
-      return suffix ? `${rule.normalized}${suffix}` : rule.normalized;
+      const rawSuffix = trimmed.slice(matched.length);
+      const suffix = rawSuffix.trimStart();
+      const hasSep = rawSuffix.length !== suffix.length;
+      // suffix 自体が末尾「店」で終わり、かつ「商店」「支店」でなければ suffix 全体を破棄
+      if (suffix && /店$/.test(suffix) && !/商店$/.test(suffix) && !/支店$/.test(suffix)) {
+        return rule.normalized;
+      }
+      return suffix ? `${rule.normalized}${hasSep ? ' ' : ''}${suffix}` : rule.normalized;
     }
   }
-  return trimmed;
+  return stripBranchSuffix(trimmed);
 }
+
+export { STORE_NORMALIZATION_RULES, normalizeStoreName };
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
