@@ -78,13 +78,13 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
         </div>
 
         <div className="rounded-2xl shadow-lg bg-white overflow-hidden">
-          <div className="grid grid-cols-1 lg:grid-cols-2">
-            <div className="relative bg-gray-50 flex items-center justify-center p-2 min-h-[300px]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 lg:h-[75vh]">
+            <div className="relative bg-gray-50 flex items-center justify-center p-2 aspect-[3/4] lg:aspect-auto lg:h-[75vh] overflow-hidden">
               {!imgError ? (
                 <img
                   src={receipt.image_url}
                   alt="Receipt"
-                  className="max-h-[80vh] object-contain w-full cursor-pointer"
+                  className="max-h-full max-w-full object-contain cursor-pointer"
                   onClick={() => window.open(receipt.image_url, '_blank')}
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
@@ -98,22 +98,22 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
               )}
             </div>
 
-            <div className="p-6 space-y-4 overflow-y-auto">
-              <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">
+            <div className="p-6 space-y-4 overflow-y-auto lg:h-[75vh]">
+              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4">
                 読み取りデータ
               </h2>
               
               {result ? (
                 <>
-                  <div className="grid grid-cols-3 gap-y-3 text-sm">
+                  <div className="grid grid-cols-3 gap-y-3 text-lg">
                     <dt className="font-medium text-gray-500">店名</dt>
-                    <dd className="col-span-2 text-gray-900">{result.store}</dd>
+                    <dd className="col-span-2 text-3xl font-bold text-gray-900">{result.store}</dd>
 
                     <dt className="font-medium text-gray-500">日付</dt>
                     <dd className="col-span-2 text-gray-900">{result.date}</dd>
 
                     <dt className="font-medium text-gray-500">金額</dt>
-                    <dd className="col-span-2 text-gray-900 font-semibold">
+                    <dd className="col-span-2 text-5xl font-bold text-gray-900">
                       {formatAmount(result.amount)}
                     </dd>
 
@@ -133,10 +133,10 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
 
                   {result.splits && result.splits.length > 0 && (
                     <div className="pt-4 border-t">
-                      <h3 className="text-sm font-semibold text-gray-700 mb-2">分割内訳</h3>
+                      <h3 className="text-base font-semibold text-gray-700 mb-2">分割内訳</h3>
                       <ul className="space-y-2">
                         {result.splits.map((split, idx) => (
-                          <li key={idx} className="bg-gray-50 rounded-md p-3 text-sm">
+                          <li key={idx} className="bg-gray-50 rounded-md p-3 text-base">
                             <div className="flex justify-between items-center font-medium text-gray-800">
                               <span>{split.category}</span>
                               <span>{formatAmount(split.amount)}</span>
@@ -154,7 +154,7 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
                   )}
 
                   {result.uncertainty_reason && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-sm text-amber-700">
+                    <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-base text-amber-700">
                       <span className="font-bold">注意:</span> {result.uncertainty_reason}
                     </div>
                   )}
