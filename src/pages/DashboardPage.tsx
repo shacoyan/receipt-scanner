@@ -9,6 +9,13 @@ interface ReceiptResult {
   amount: number;
   store: string;
   category: string;
+  tax_code?: number | null;
+  splits?: Array<{
+    category: string;
+    amount: number;
+    tax_code: number;
+    description?: string;
+  }> | null;
 }
 
 interface Receipt {
@@ -359,6 +366,54 @@ const DashboardPage: React.FC = () => {
     );
   };
 
+  // ─── Split badge & category cell (multi-category receipts) ────────────
+  const renderSplitBadge = (r: Receipt) => {
+    const splits = r.result_json?.splits;
+    if (!splits || splits.length < 2) return null;
+    const tooltip = splits
+      .map((s) => `${s.category}: ¥${(s.amount ?? 0).toLocaleString()}`)
+      .join(' / ');
+    return (
+      <span
+        className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+        title={tooltip}
+      >
+        分割{splits.length}件
+      </span>
+    );
+  };
+
+  const renderTaxBadge = (taxCode?: number | null) => {
+    if (taxCode == null) return null;
+    // 137 = 8%軽減 (8軽)、136 = 10%標準
+    const label = taxCode === 137 ? '8%軽減' : '10%';
+    return <span className="ml-1 text-xs text-gray-400">{label}</span>;
+  };
+
+  const renderCategoryCell = (r: Receipt, isEditing: boolean, result: ReceiptResult | null) => {
+    const splits = r.result_json?.splits;
+    if (splits && splits.length >= 2) {
+      const tooltip = splits
+        .map((s) => `${s.category}: ¥${(s.amount ?? 0).toLocaleString()}`)
+        .join(' / ');
+      const main = splits.reduce((m, s) => ((s.amount ?? 0) > (m.amount ?? 0) ? s : m), splits[0]);
+      const rest = splits.length - 1;
+      return (
+        <span className="inline-flex items-center">
+          <span className="text-gray-700" title={tooltip}>{main.category}</span>
+          {rest > 0 && <span className="text-gray-400 text-xs ml-1">他{rest}件</span>}
+          {renderSplitBadge(r)}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center">
+        {renderEditableCell(result?.category || '-', 'category', isEditing)}
+        {!isEditing && renderTaxBadge(result?.tax_code)}
+      </span>
+    );
+  };
+
   const renderEditableCell = (
     value: string,
     field: keyof ReceiptResult,
@@ -408,7 +463,7 @@ const DashboardPage: React.FC = () => {
     const isEditing = editingId === r.id;
     const isError = r.status === 'error';
     const result = isEditing && editDraft ? editDraft : r.result_json;
-    const canEdit = r.status === 'done' || r.status === 'error';
+    const canEdit = (r.status === 'done' || r.status === 'error') && !(r.result_json?.splits && r.result_json.splits.length >= 2);
 
     return (
       <tr
@@ -470,7 +525,7 @@ const DashboardPage: React.FC = () => {
 
         {/* Category */}
         <td className="px-3 py-3 text-sm">
-          {renderEditableCell(result?.category || '-', 'category', isEditing)}
+          {renderCategoryCell(r, isEditing, result)}
         </td>
 
         {/* Section */}
@@ -539,7 +594,7 @@ const DashboardPage: React.FC = () => {
     const isEditing = editingId === r.id;
     const isError = r.status === 'error';
     const result = isEditing && editDraft ? editDraft : r.result_json;
-    const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
+    const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json && !(r.result_json?.splits && r.result_json.splits.length >= 2);
 
     return (
       <div key={r.id} className={[
@@ -618,7 +673,7 @@ const DashboardPage: React.FC = () => {
               </div>
               <div>
                 <span className="text-gray-400 text-xs">勘定科目</span>
-                <div>{renderEditableCell(result?.category || '-', 'category', isEditing)}</div>
+                <div>{renderCategoryCell(r, isEditing, result)}</div>
               </div>
             </div>
           </>
@@ -643,7 +698,7 @@ const DashboardPage: React.FC = () => {
             </div>
             <div>
               <span className="text-gray-400 text-xs">勘定科目</span>
-              <div>{renderEditableCell(result?.category || '-', 'category', isEditing)}</div>
+              <div>{renderCategoryCell(r, isEditing, result)}</div>
             </div>
             <div className="col-span-2">
               <span className="text-gray-400 text-xs">部門</span>

@@ -32,6 +32,19 @@ async function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function validateSplitsFromDb(arr, amount) {
+  if (!Array.isArray(arr) || arr.length < 2) return false;
+  let sum = 0;
+  for (const split of arr) {
+    if (typeof split.category !== 'string' || !CATEGORY_MAP[split.category]) return false;
+    if (typeof split.amount !== 'number' || split.amount <= 0) return false;
+    if (split.tax_code !== 136 && split.tax_code !== 137) return false;
+    sum += split.amount;
+  }
+  if (sum !== amount) return false;
+  return true;
+}
+
 async function uploadReceiptToFreee(companyId, receiptData, mimeType, filename) {
   const { FormData, Blob } = await import('node:buffer').then(() => globalThis).catch(() => ({}));
 
@@ -59,14 +72,40 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { date, amount, store, category, receipt_id, section_id } = request.body;
+  const { date, amount, store, category, receipt_id, section_id, splits, tax_code } = request.body;
+
+  // splits モードチェック
+  const explicitSplits = request.body.splits !== undefined && request.body.splits !== null;
+  const hasSplits = Array.isArray(splits) && splits.length >= 2;
+
+  // splits バリデーション
+  if (hasSplits) {
+    let splitsAmountSum = 0;
+    for (const split of splits) {
+      if (!CATEGORY_MAP[split.category]) {
+        return response.status(400).json({ error: '分割項目に未対応のカテゴリが含まれています' });
+      }
+      if (typeof split.amount !== 'number' || split.amount <= 0) {
+        return response.status(400).json({ error: '分割項目の金額が不正です' });
+      }
+      if (split.tax_code !== 136 && split.tax_code !== 137) {
+        return response.status(400).json({ error: '分割項目の税コードが不正です' });
+      }
+      splitsAmountSum += split.amount;
+    }
+    if (splitsAmountSum !== amount) {
+      return response.status(400).json({ error: '分割金額の合計が総額と一致しません' });
+    }
+  } else if (explicitSplits) {
+    return response.status(400).json({ error: '分割項目は2行以上指定してください' });
+  }
 
   // バリデーション: 必須項目チェック
   const errors = [];
   if (!date) errors.push('日付が未取得');
   if (!amount && amount !== 0) errors.push('金額が未取得');
   if (!store) errors.push('店名が未取得');
-  if (!category) errors.push('勘定科目が未取得');
+  if (!hasSplits && !category) errors.push('勘定科目が未取得');
 
   // 日付の妥当性チェック
   if (date) {
@@ -132,11 +171,13 @@ export default async function handler(request, response) {
     // 1. Supabaseからレシート画像を取得してfreeeにアップロード
     let freeeReceiptId = null;
     let receipt = null;
+    let result_json = null;
+    
     if (receipt_id) {
       const supabase = await getSupabase();
       const { data: receiptData, error: receiptSelectError } = await supabase
         .from('receipts')
-        .select('storage_path, mime_type, original_filename, section_id')
+        .select('storage_path, mime_type, original_filename, section_id, result_json')
         .eq('id', receipt_id)
         .single();
 
@@ -145,6 +186,8 @@ export default async function handler(request, response) {
       }
       receipt = receiptData;
       if (receipt) {
+        result_json = receipt.result_json;
+        
         const { data: fileData, error: downloadError } = await supabase.storage
           .from('receipts')
           .download(receipt.storage_path);
@@ -167,6 +210,24 @@ export default async function handler(request, response) {
         }
       }
     }
+
+    // splits, tax_code 補完
+    const dbSplits = Array.isArray(result_json?.splits) && result_json.splits.length >= 2 ? result_json.splits : undefined;
+    let effectiveSplits = hasSplits ? splits : undefined;
+    
+    if (!hasSplits && !explicitSplits && dbSplits) {
+      if (validateSplitsFromDb(dbSplits, amount)) {
+        effectiveSplits = dbSplits;
+      } else {
+        console.warn('result_json.splits validation failed, falling back to single mode.');
+      }
+    }
+
+    const effectiveTaxCode = tax_code ?? result_json?.tax_code ?? TAX_CODE;
+    const effectiveHasSplits = Array.isArray(effectiveSplits) && effectiveSplits.length >= 2;
+
+    // 単一モード時の tax_code フォールバック
+    const singleTaxCode = (effectiveTaxCode === 136 || effectiveTaxCode === 137) ? effectiveTaxCode : TAX_CODE;
 
     // 2. 取引先（partner）を検索 or 新規作成
     let partnerId = null;
@@ -203,19 +264,42 @@ export default async function handler(request, response) {
     const sectionName = section_id || (receipt_id && receipt ? receipt.section_id : null);
     const freeSectionId = sectionName ? SECTION_MAP[sectionName] : null;
 
-    // 4. 取引を作成
+    // 4. details の構築
+    const buildDetail = (item) => {
+      return {
+        account_item_id: CATEGORY_MAP[item.category] ?? DEFAULT_ACCOUNT_ITEM_ID,
+        amount: item.amount,
+        description: item.description || store || '',
+        tax_code: (item.tax_code === 136 || item.tax_code === 137) ? item.tax_code : 136,
+      };
+    };
+
+    let details;
+    if (effectiveHasSplits) {
+      details = effectiveSplits.map(split => {
+        const detail = buildDetail(split);
+        return detail;
+      });
+    } else {
+      const singleItem = {
+        category: category,
+        amount: amount,
+        description: store || '',
+        tax_code: singleTaxCode,
+      };
+      details = [buildDetail(singleItem)];
+    }
+
+    if (freeSectionId) {
+      details.forEach(d => d.section_id = freeSectionId);
+    }
+
+    // 5. 取引を作成
     const dealBody = {
       company_id: companyId,
       issue_date: date,
       type: 'expense',
-      details: [
-        {
-          account_item_id: accountItemId,
-          amount,
-          description: `${store || ''}`,
-          tax_code: TAX_CODE,
-        },
-      ],
+      details,
       payments: [
         {
           date,
@@ -228,10 +312,6 @@ export default async function handler(request, response) {
 
     if (partnerId) {
       dealBody.partner_id = partnerId;
-    }
-
-    if (freeSectionId) {
-      dealBody.details[0].section_id = freeSectionId;
     }
 
     if (freeeReceiptId) {
