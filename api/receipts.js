@@ -1,3 +1,7 @@
+const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
+const ALLOWED_TAX_CODES = [136, 137];
+const MAX_DESCRIPTION_LENGTH = 200;
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return handleGet(req, res);
@@ -100,11 +104,74 @@ async function handlePatch(req, res) {
       updatePayload = { status: 'done' };
     } else if (action === 'rerun') {
       updatePayload = { status: 'pending', result_json: null, error_message: null };
-    } else {
-      // action === 'update'
-      if (!data) {
+    } else if (action === 'update') {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
         return res.status(400).json({ error: 'data is required for update action' });
       }
+
+      // Validate date
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+        return res.status(400).json({ error: 'invalid date' });
+      }
+
+      // Validate store
+      if (typeof data.store !== 'string' || data.store.trim() === '') {
+        return res.status(400).json({ error: 'invalid store' });
+      }
+
+      // Validate amount
+      if (typeof data.amount !== 'number' || !Number.isInteger(data.amount) || data.amount <= 0) {
+        return res.status(400).json({ error: 'invalid amount' });
+      }
+
+      // Validate category (optional)
+      if (data.category !== undefined && !ALLOWED_CATEGORIES.includes(data.category)) {
+        return res.status(400).json({ error: 'invalid category' });
+      }
+
+      // Validate tax_code (optional)
+      if (data.tax_code !== undefined && data.tax_code !== null && !ALLOWED_TAX_CODES.includes(data.tax_code)) {
+        return res.status(400).json({ error: 'invalid tax_code' });
+      }
+
+      // Validate splits
+      if (data.splits !== undefined) {
+        if (data.splits === null) {
+          // Allow splitting release
+        } else if (!Array.isArray(data.splits)) {
+          return res.status(400).json({ error: 'splits must be array or null' });
+        } else {
+          if (data.splits.length < 2) {
+            return res.status(400).json({ error: 'splits must have at least 2 items' });
+          }
+          
+          let sum = 0;
+          for (let i = 0; i < data.splits.length; i++) {
+            const split = data.splits[i];
+            
+            if (!ALLOWED_CATEGORIES.includes(split.category)) {
+              return res.status(400).json({ error: `invalid category in splits[${i}]` });
+            }
+            if (typeof split.amount !== 'number' || !Number.isInteger(split.amount) || split.amount <= 0) {
+              return res.status(400).json({ error: `invalid amount in splits[${i}]` });
+            }
+            if (!ALLOWED_TAX_CODES.includes(split.tax_code)) {
+              return res.status(400).json({ error: `invalid tax_code in splits[${i}]` });
+            }
+            if (split.description !== undefined) {
+              if (typeof split.description !== 'string' || split.description.length > MAX_DESCRIPTION_LENGTH) {
+                return res.status(400).json({ error: `description too long in splits[${i}]` });
+              }
+            }
+            sum += split.amount;
+          }
+
+          if (sum !== data.amount) {
+            return res.status(400).json({ error: `splits sum mismatch: expected ${data.amount}, got ${sum}` });
+          }
+        }
+      }
+
       updatePayload = { result_json: data };
       if (section_id !== undefined) {
         updatePayload.section_id = section_id;

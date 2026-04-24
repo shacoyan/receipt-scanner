@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import SplitEditModal from '../components/SplitEditModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReceiptStatus = 'pending' | 'processing' | 'done' | 'approved' | 'error';
@@ -88,6 +89,10 @@ const DashboardPage: React.FC = () => {
 
   // Image preview modal
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Split editing
+  const [splitModalReceipt, setSplitModalReceipt] = useState<Receipt | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // Loading / sending
   const [loading, setLoading] = useState(false);
@@ -185,6 +190,9 @@ const DashboardPage: React.FC = () => {
     setEditingId(null);
   }, [activeTab]);
 
+  // Reset expanded on tab/page change
+  useEffect(() => { setExpandedIds(new Set()); }, [activeTab, page]);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_LIMIT));
 
   // ─── Selection helpers ────────────────────────────────────────────────────
@@ -203,6 +211,19 @@ const DashboardPage: React.FC = () => {
     } else {
       setSelected(new Set(receipts.map((r) => r.id)));
     }
+  };
+
+  // ─── Expand / Split Modal helpers ─────────────────────────────────────────
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const openSplitModal = (r: Receipt) => {
+    setSplitModalReceipt(r);
   };
 
   // ─── Inline edit ──────────────────────────────────────────────────────────
@@ -366,23 +387,6 @@ const DashboardPage: React.FC = () => {
     );
   };
 
-  // ─── Split badge & category cell (multi-category receipts) ────────────
-  const renderSplitBadge = (r: Receipt) => {
-    const splits = r.result_json?.splits;
-    if (!splits || splits.length < 2) return null;
-    const tooltip = splits
-      .map((s) => `${s.category}: ¥${(s.amount ?? 0).toLocaleString()}`)
-      .join(' / ');
-    return (
-      <span
-        className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
-        title={tooltip}
-      >
-        分割{splits.length}件
-      </span>
-    );
-  };
-
   const renderTaxBadge = (taxCode?: number | null) => {
     if (taxCode == null) return null;
     // 137 = 8%軽減 (8軽)、136 = 10%標準
@@ -390,7 +394,7 @@ const DashboardPage: React.FC = () => {
     return <span className="ml-1 text-xs text-gray-400">{label}</span>;
   };
 
-  const renderCategoryCell = (r: Receipt, isEditing: boolean, result: ReceiptResult | null) => {
+  const renderCategoryCell = (r: Receipt, isEditing: boolean, result: ReceiptResult | null, isSplit: boolean) => {
     const splits = r.result_json?.splits;
     if (splits && splits.length >= 2) {
       const tooltip = splits
@@ -402,7 +406,15 @@ const DashboardPage: React.FC = () => {
         <span className="inline-flex items-center">
           <span className="text-gray-700" title={tooltip}>{main.category}</span>
           {rest > 0 && <span className="text-gray-400 text-xs ml-1">他{rest}件</span>}
-          {renderSplitBadge(r)}
+          {isSplit && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); toggleExpand(r.id); }}
+              className="ml-1 text-xs text-indigo-600 hover:text-indigo-800"
+            >
+              分割{splits.length}件 {expandedIds.has(r.id) ? '▾' : '▸'}
+            </button>
+          )}
         </span>
       );
     }
@@ -463,129 +475,170 @@ const DashboardPage: React.FC = () => {
     const isEditing = editingId === r.id;
     const isError = r.status === 'error';
     const result = isEditing && editDraft ? editDraft : r.result_json;
-    const canEdit = (r.status === 'done' || r.status === 'error') && !(r.result_json?.splits && r.result_json.splits.length >= 2);
+    const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
+    const isSplit = !!(r.result_json?.splits && r.result_json.splits.length >= 2);
 
     return (
-      <tr
-        key={r.id}
-        className={[
-          'border-b transition',
-          isEditing
-            ? 'bg-indigo-50/50 border-gray-100'
-            : isError
-              ? 'bg-red-50/60 border-red-200 hover:bg-red-50'
-              : 'border-gray-100 hover:bg-indigo-50/30',
-        ].join(' ')}
-      >
-        {/* Checkbox */}
-        <td className="px-3 py-3">
-          <input
-            type="checkbox"
-            checked={selected.has(r.id)}
-            onChange={() => toggleSelect(r.id)}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-        </td>
+      <React.Fragment key={r.id}>
+        <tr
+          className={[
+            'border-b transition',
+            isEditing
+              ? 'bg-indigo-50/50 border-gray-100'
+              : isError
+                ? 'bg-red-50/60 border-red-200 hover:bg-red-50'
+                : 'border-gray-100 hover:bg-indigo-50/30',
+            isSplit ? 'cursor-pointer' : '',
+          ].join(' ')}
+          onClick={() => isSplit && toggleExpand(r.id)}
+        >
+          {/* Checkbox */}
+          <td className="px-3 py-3">
+            <input
+              type="checkbox"
+              checked={selected.has(r.id)}
+              onChange={() => toggleSelect(r.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </td>
 
-        {/* Status */}
-        <td className="px-3 py-3">
-          {renderStatusBadge(r.status)}
-          {!!r.freee_sent_at && (
-            <span 
-              className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
-              title={`送信日時: ${r.freee_sent_at}${r.freee_deal_id ? ` / 取引ID: ${r.freee_deal_id}` : ''}`}
-            >
-              送信済み
-            </span>
-          )}
-        </td>
-
-        {/* Date */}
-        <td className="px-3 py-3 text-sm">
-          {renderEditableCell(result?.date || '-', 'date', isEditing)}
-        </td>
-
-        {/* Store */}
-        <td className="px-3 py-3 text-sm">
-          {renderEditableCell(result?.store || '-', 'store', isEditing)}
-          {isError && r.error_message && (
-            <p className="mt-1 text-xs text-red-600 font-semibold truncate max-w-[220px]" title={r.error_message}>
-              {r.error_message}
-            </p>
-          )}
-        </td>
-
-        {/* Amount */}
-        <td className="px-3 py-3 text-sm font-medium">
-          {isEditing
-            ? renderEditableCell(String(result?.amount ?? ''), 'amount', true)
-            : <span className="text-gray-700">{result?.amount != null ? formatYen(result.amount) : '-'}</span>
-          }
-        </td>
-
-        {/* Category */}
-        <td className="px-3 py-3 text-sm">
-          {renderCategoryCell(r, isEditing, result)}
-        </td>
-
-        {/* Section */}
-        <td className="px-3 py-3 text-sm">
-          {isEditing ? (
-            <select
-              value={editSectionId || ''}
-              onChange={(e) => setEditSectionId(e.target.value || null)}
-              className="w-full border border-indigo-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            >
-              <option value="">未設定</option>
-              {SECTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-gray-700">{r.section_id || '-'}</span>
-          )}
-        </td>
-
-        {/* Actions (edit) */}
-        <td className="px-3 py-3 text-sm">
-          {canEdit && r.result_json && !isEditing && (
-            <button
-              onClick={() => startEdit(r)}
-              className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
-            >
-              編集
-            </button>
-          )}
-          {isEditing && (
-            <div className="flex gap-1">
-              <button
-                onClick={saveEdit}
-                className="text-green-600 hover:text-green-800 text-xs font-medium"
+          {/* Status */}
+          <td className="px-3 py-3">
+            {renderStatusBadge(r.status)}
+            {!!r.freee_sent_at && (
+              <span 
+                className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                title={`送信日時: ${r.freee_sent_at}${r.freee_deal_id ? ` / 取引ID: ${r.freee_deal_id}` : ''}`}
               >
-                保存
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="text-gray-500 hover:text-gray-700 text-xs font-medium"
-              >
-                取消
-              </button>
-            </div>
-          )}
-        </td>
+                送信済み
+              </span>
+            )}
+          </td>
 
-        {/* Image thumbnail */}
-        <td className="px-3 py-3">
-          {r.image_url && (
-            <button
-              onClick={() => setPreviewUrl(r.image_url)}
-              className="w-10 h-10 rounded-lg overflow-hidden border border-gray-200 hover:border-indigo-400 transition flex-shrink-0"
-            >
-              <img src={r.image_url} alt="receipt" className="w-full h-full object-cover" />
-            </button>
-          )}
-        </td>
-      </tr>
+          {/* Date */}
+          <td className="px-3 py-3 text-sm">
+            {renderEditableCell(result?.date || '-', 'date', isEditing)}
+          </td>
+
+          {/* Store */}
+          <td className="px-3 py-3 text-sm">
+            {renderEditableCell(result?.store || '-', 'store', isEditing)}
+            {isError && r.error_message && (
+              <p className="mt-1 text-xs text-red-600 font-semibold truncate max-w-[220px]" title={r.error_message}>
+                {r.error_message}
+              </p>
+            )}
+          </td>
+
+          {/* Amount */}
+          <td className="px-3 py-3 text-sm font-medium">
+            {isEditing
+              ? renderEditableCell(String(result?.amount ?? ''), 'amount', true)
+              : <span className="text-gray-700">{result?.amount != null ? formatYen(result.amount) : '-'}</span>
+            }
+          </td>
+
+          {/* Category */}
+          <td className="px-3 py-3 text-sm">
+            {renderCategoryCell(r, isEditing, result, isSplit)}
+          </td>
+
+          {/* Section */}
+          <td className="px-3 py-3 text-sm">
+            {isEditing ? (
+              <select
+                value={editSectionId || ''}
+                onChange={(e) => setEditSectionId(e.target.value || null)}
+                className="w-full border border-indigo-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                <option value="">未設定</option>
+                {SECTIONS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-gray-700">{r.section_id || '-'}</span>
+            )}
+          </td>
+
+          {/* Actions (edit) */}
+          <td className="px-3 py-3 text-sm">
+            {canEdit && r.result_json && !isEditing && (
+              <button
+                onClick={(e) => { e.stopPropagation(); isSplit ? openSplitModal(r) : startEdit(r); }}
+                className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+              >
+                編集
+              </button>
+            )}
+            {isEditing && (
+              <div className="flex gap-1">
+                <button
+                  onClick={saveEdit}
+                  className="text-green-600 hover:text-green-800 text-xs font-medium"
+                >
+                  保存
+                </button>
+                <button
+                  onClick={cancelEdit}
+                  className="text-gray-500 hover:text-gray-700 text-xs font-medium"
+                >
+                  取消
+                </button>
+              </div>
+            )}
+          </td>
+
+          {/* Image thumbnail */}
+          <td className="px-3 py-3">
+            {r.image_url && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setPreviewUrl(r.image_url); }}
+                className="w-10 h-10 rounded-lg overflow-hidden border border-gray-200 hover:border-indigo-400 transition flex-shrink-0"
+              >
+                <img src={r.image_url} alt="receipt" className="w-full h-full object-cover" />
+              </button>
+            )}
+          </td>
+        </tr>
+        {isSplit && expandedIds.has(r.id) && (
+          <tr className="bg-indigo-50/30">
+            <td colSpan={9} className="px-8 py-2">
+              <div className="text-xs text-gray-500 mb-1">分割内訳</div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-400 text-xs text-left">
+                    <th className="py-1 font-normal w-40">勘定科目</th>
+                    <th className="py-1 font-normal w-28 text-right">金額</th>
+                    <th className="py-1 font-normal w-20">税区分</th>
+                    <th className="py-1 font-normal">説明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.result_json!.splits!.map((s, i) => (
+                    <tr key={i} className="border-t border-indigo-100">
+                      <td className="py-1">{s.category}</td>
+                      <td className="py-1 text-right tabular-nums">¥{s.amount.toLocaleString()}</td>
+                      <td className="py-1">{s.tax_code === 137 ? '8軽' : '10%'}</td>
+                      <td className="py-1 text-gray-600">{s.description || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mt-1 text-xs">
+                {(() => {
+                  const sum = r.result_json!.splits!.reduce((a, s) => a + (Number(s.amount) || 0), 0);
+                  const amt = r.result_json!.amount;
+                  return sum === amt
+                    ? <span className="text-gray-500">合計: ¥{sum.toLocaleString()} (一致 ✓)</span>
+                    : <span className="text-red-600 font-semibold">合計: ¥{sum.toLocaleString()} / 総額 ¥{amt.toLocaleString()} (差額 ¥{(amt - sum).toLocaleString()})</span>;
+                })()}
+              </div>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
     );
   };
 
@@ -594,7 +647,8 @@ const DashboardPage: React.FC = () => {
     const isEditing = editingId === r.id;
     const isError = r.status === 'error';
     const result = isEditing && editDraft ? editDraft : r.result_json;
-    const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json && !(r.result_json?.splits && r.result_json.splits.length >= 2);
+    const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
+    const isSplit = !!(r.result_json?.splits && r.result_json.splits.length >= 2);
 
     return (
       <div key={r.id} className={[
@@ -604,13 +658,16 @@ const DashboardPage: React.FC = () => {
           : isError
             ? 'bg-red-50/80 border border-red-300 shadow-red-100'
             : 'bg-white/80',
-      ].join(' ')}>
+      ].join(' ')}
+        onClick={() => isSplit && toggleExpand(r.id)}
+      >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={selected.has(r.id)}
               onChange={() => toggleSelect(r.id)}
+              onClick={(e) => e.stopPropagation()}
               className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
             />
             {renderStatusBadge(r.status)}
@@ -625,7 +682,10 @@ const DashboardPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             {canEdit && !isEditing && (
-              <button onClick={() => startEdit(r)} className="text-indigo-600 text-xs font-medium">
+              <button 
+                onClick={(e) => { e.stopPropagation(); isSplit ? openSplitModal(r) : startEdit(r); }} 
+                className="text-indigo-600 text-xs font-medium"
+              >
                 編集
               </button>
             )}
@@ -637,7 +697,7 @@ const DashboardPage: React.FC = () => {
             )}
             {r.image_url && (
               <button
-                onClick={() => setPreviewUrl(r.image_url)}
+                onClick={(e) => { e.stopPropagation(); setPreviewUrl(r.image_url); }}
                 className="w-10 h-10 rounded-lg overflow-hidden border border-gray-200"
               >
                 <img src={r.image_url} alt="receipt" className="w-full h-full object-cover" />
@@ -673,7 +733,7 @@ const DashboardPage: React.FC = () => {
               </div>
               <div>
                 <span className="text-gray-400 text-xs">勘定科目</span>
-                <div>{renderCategoryCell(r, isEditing, result)}</div>
+                <div>{renderCategoryCell(r, isEditing, result, isSplit)}</div>
               </div>
             </div>
           </>
@@ -698,7 +758,7 @@ const DashboardPage: React.FC = () => {
             </div>
             <div>
               <span className="text-gray-400 text-xs">勘定科目</span>
-              <div>{renderCategoryCell(r, isEditing, result)}</div>
+              <div>{renderCategoryCell(r, isEditing, result, isSplit)}</div>
             </div>
             <div className="col-span-2">
               <span className="text-gray-400 text-xs">部門</span>
@@ -718,6 +778,32 @@ const DashboardPage: React.FC = () => {
                   <span className="text-gray-700">{r.section_id || '-'}</span>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {isSplit && expandedIds.has(r.id) && (
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <div className="text-xs text-gray-500 mb-1">分割内訳</div>
+            <div className="space-y-1">
+              {r.result_json!.splits!.map((s, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate">{s.category} <span className="text-xs text-gray-400">{s.tax_code === 137 ? '8軽' : '10%'}</span></div>
+                    {s.description && <div className="text-xs text-gray-500 truncate">{s.description}</div>}
+                  </div>
+                  <div className="tabular-nums text-right ml-2">¥{s.amount.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 text-xs">
+              {(() => {
+                const sum = r.result_json!.splits!.reduce((a, s) => a + (Number(s.amount) || 0), 0);
+                const amt = r.result_json!.amount;
+                return sum === amt
+                  ? <span className="text-gray-500">合計: ¥{sum.toLocaleString()} (一致 ✓)</span>
+                  : <span className="text-red-600 font-semibold">差額 ¥{(amt - sum).toLocaleString()}</span>;
+              })()}
             </div>
           </div>
         )}
@@ -911,6 +997,19 @@ const DashboardPage: React.FC = () => {
             <img src={previewUrl} alt="receipt preview" className="max-w-full max-h-[85vh] object-contain" />
           </div>
         </div>
+      )}
+      {splitModalReceipt && (
+        <SplitEditModal
+          receipt={splitModalReceipt as React.ComponentProps<typeof SplitEditModal>['receipt']}
+          onClose={() => setSplitModalReceipt(null)}
+          onSaved={async () => {
+            setSplitModalReceipt(null);
+            await fetchReceipts();
+            await fetchTabCounts();
+          }}
+          categories={CATEGORIES}
+          sections={SECTIONS}
+        />
       )}
     </div>
   );
