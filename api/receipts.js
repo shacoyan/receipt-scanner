@@ -93,8 +93,8 @@ async function handlePatch(req, res) {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
-    if (!action || !['approve', 'update', 'unapprove', 'rerun'].includes(action)) {
-      return res.status(400).json({ error: 'action must be "approve", "unapprove", "update", or "rerun"' });
+    if (!action || !['approve', 'update', 'unapprove', 'rerun', 'markError'].includes(action)) {
+      return res.status(400).json({ error: 'action must be "approve", "unapprove", "update", "rerun", or "markError"' });
     }
 
     let updatePayload;
@@ -104,6 +104,8 @@ async function handlePatch(req, res) {
       updatePayload = { status: 'done' };
     } else if (action === 'rerun') {
       updatePayload = { status: 'pending', result_json: null, error_message: null };
+    } else if (action === 'markError') {
+      updatePayload = { status: 'error', error_message: '承認モードで手動エラー化' };
     } else if (action === 'update') {
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         return res.status(400).json({ error: 'data is required for update action' });

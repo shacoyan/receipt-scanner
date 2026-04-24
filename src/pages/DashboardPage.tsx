@@ -820,12 +820,20 @@ const DashboardPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
             <span>🧾</span> レシート管理
           </h1>
-          <button
-            onClick={() => navigate('/')}
-            className="text-sm bg-indigo-600 text-white rounded-md px-4 py-2 hover:bg-indigo-700 transition font-medium"
-          >
-            アップロードへ →
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/approve')}
+              className="text-sm bg-green-600 text-white rounded-md px-4 py-2 hover:bg-green-700 transition font-medium"
+            >
+              承認モードへ →
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="text-sm bg-indigo-600 text-white rounded-md px-4 py-2 hover:bg-indigo-700 transition font-medium"
+            >
+              アップロードへ →
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}

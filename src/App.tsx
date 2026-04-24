@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import UploadPage from './pages/UploadPage';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const ApprovePage = lazy(() => import('./pages/ApprovePage'));
 
 const App: React.FC = () => {
   return (
@@ -11,6 +12,11 @@ const App: React.FC = () => {
       <Route path="/dashboard" element={
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center">読み込み中...</div>}>
           <DashboardPage />
+        </Suspense>
+      } />
+      <Route path="/approve" element={
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center">読み込み中...</div>}>
+          <ApprovePage />
         </Suspense>
       } />
     </Routes>
