@@ -19,6 +19,8 @@ interface Receipt {
   error_message: string | null;
   section_id: string | null;
   created_at: string;
+  freee_sent_at: string | null;
+  freee_deal_id: string | null;
 }
 
 interface ReceiptsResponse {
@@ -33,14 +35,15 @@ const SECTIONS = ['スーク', '金魚', 'KITUNE', 'Goodbye', 'LR', '狛犬', 'm
 const PAGE_LIMIT = 50;
 const AUTO_REFRESH_MS = 10_000;
 
-type TabKey = 'all' | 'analyzing' | 'done' | 'approved' | 'error';
+type TabKey = 'all' | 'analyzing' | 'done' | 'approved' | 'sent' | 'error';
 
-const TABS: { key: TabKey; label: string; statuses: ReceiptStatus[] | null }[] = [
-  { key: 'all', label: '全て', statuses: null },
-  { key: 'analyzing', label: '解析中', statuses: ['pending', 'processing'] },
-  { key: 'done', label: '解析済み', statuses: ['done'] },
-  { key: 'approved', label: '承認済み', statuses: ['approved'] },
-  { key: 'error', label: 'エラー', statuses: ['error'] },
+const TABS: { key: TabKey; label: string; statuses: ReceiptStatus[] | null; sent: boolean | null }[] = [
+  { key: 'all', label: '全て', statuses: null, sent: null },
+  { key: 'analyzing', label: '解析中', statuses: ['pending', 'processing'], sent: null },
+  { key: 'done', label: '解析済み', statuses: ['done'], sent: null },
+  { key: 'approved', label: '承認済み', statuses: ['approved'], sent: false },
+  { key: 'sent', label: '送信済み', statuses: ['approved'], sent: true },
+  { key: 'error', label: 'エラー', statuses: ['error'], sent: null },
 ];
 
 const STATUS_BADGE: Record<ReceiptStatus, { bg: string; text: string; label: string }> = {
@@ -65,7 +68,7 @@ const DashboardPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [tabCounts, setTabCounts] = useState<Record<TabKey, number>>({
-    all: 0, analyzing: 0, done: 0, approved: 0, error: 0,
+    all: 0, analyzing: 0, done: 0, approved: 0, sent: 0, error: 0,
   });
 
   // Selection
@@ -82,15 +85,18 @@ const DashboardPage: React.FC = () => {
   // Loading / sending
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Fetch ────────────────────────────────────────────────────────────────
   const statusQueryParam = useCallback((): string => {
     const tab = TABS.find((t) => t.key === activeTab);
-    if (!tab || !tab.statuses) return '';
-    return tab.statuses.map((s) => `status=${s}`).join('&');
+    if (!tab) return '';
+    const parts: string[] = [];
+    if (tab.statuses) parts.push(...tab.statuses.map((s) => `status=${s}`));
+    if (tab.sent === true) parts.push('sent=true');
+    if (tab.sent === false) parts.push('sent=false');
+    return parts.join('&');
   }, [activeTab]);
 
   const fetchReceipts = useCallback(async (silent = false) => {
@@ -116,27 +122,32 @@ const DashboardPage: React.FC = () => {
       if (!res.ok) return;
       const allJson: ReceiptsResponse = await res.json();
 
-      const countFor = async (statuses: ReceiptStatus[]): Promise<number> => {
-        const q = statuses.map((s) => `status=${s}`).join('&');
+      const countFor = async (statuses: ReceiptStatus[], opts?: { sent?: boolean }): Promise<number> => {
+        const parts: string[] = statuses.map((s) => `status=${s}`);
+        if (opts?.sent === true) parts.push('sent=true');
+        if (opts?.sent === false) parts.push('sent=false');
+        const q = parts.join('&');
         const r = await fetch(`/api/receipts?${q}&page=1&limit=1`);
         if (!r.ok) return 0;
         const j: ReceiptsResponse = await r.json();
         return j.total;
       };
 
-      const [analyzing, done, approved, error] = await Promise.all([
+      const [analyzing, doneCnt, approvedUnsent, sent, errorCnt] = await Promise.all([
         countFor(['pending', 'processing']),
         countFor(['done']),
-        countFor(['approved']),
+        countFor(['approved'], { sent: false }),
+        countFor(['approved'], { sent: true }),
         countFor(['error']),
       ]);
 
       setTabCounts({
         all: allJson.total,
         analyzing,
-        done,
-        approved,
-        error,
+        done: doneCnt,
+        approved: approvedUnsent,
+        sent,
+        error: errorCnt,
       });
     } catch {
       // ignore
@@ -298,19 +309,18 @@ const DashboardPage: React.FC = () => {
 
   // ─── Send to freee ────────────────────────────────────────────────────────
   const sendToFreee = async () => {
-    const approvedReceipts = receipts.filter(
-      (r) => r.status === 'approved' && r.result_json && !sentIds.has(r.id)
+    const targets = receipts.filter(
+      (r) => r.status === 'approved' && r.result_json && !r.freee_sent_at
     );
-    if (approvedReceipts.length === 0) {
+    if (targets.length === 0) {
       alert('送信可能な承認済みレシートがありません');
       return;
     }
     setSending(true);
-    let successCount = 0;
-    let failCount = 0;
-    const failMessages: string[] = [];
-    const newSentIds = new Set(sentIds);
-    for (const r of approvedReceipts) {
+    let ok = 0;
+    let ng = 0;
+    const failMsgs: string[] = [];
+    for (const r of targets) {
       try {
         const res = await fetch('/api/register', {
           method: 'POST',
@@ -318,23 +328,21 @@ const DashboardPage: React.FC = () => {
           body: JSON.stringify({ ...r.result_json, receipt_id: r.id, section_id: r.section_id }),
         });
         if (res.ok) {
-          successCount++;
-          newSentIds.add(r.id);
+          ok++;
         } else {
-          failCount++;
+          ng++;
           const err = await res.json().catch(() => ({}));
-          failMessages.push(`${r.result_json?.store || '不明'}: ${(err as {error?: string}).error || '送信失敗'}`);
+          failMsgs.push(`${r.result_json?.store || '不明'}: ${(err as {error?: string}).error || '送信失敗'}`);
         }
       } catch {
-        failCount++;
-        failMessages.push(`${r.result_json?.store || '不明'}: 通信エラー`);
+        ng++;
+        failMsgs.push(`${r.result_json?.store || '不明'}: 通信エラー`);
       }
     }
-    setSentIds(newSentIds);
     setSending(false);
-    let msg = `freee送信完了: 成功 ${successCount}件`;
-    if (failCount > 0) {
-      msg += `\n失敗 ${failCount}件:\n${failMessages.join('\n')}`;
+    let msg = `freee送信完了: 成功 ${ok}件`;
+    if (ng > 0) {
+      msg += `\n失敗 ${ng}件:\n${failMsgs.join('\n')}`;
     }
     alert(msg);
     await fetchReceipts();
@@ -427,8 +435,13 @@ const DashboardPage: React.FC = () => {
         {/* Status */}
         <td className="px-3 py-3">
           {renderStatusBadge(r.status)}
-          {sentIds.has(r.id) && (
-            <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">送信済み</span>
+          {!!r.freee_sent_at && (
+            <span 
+              className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+              title={`送信日時: ${r.freee_sent_at}${r.freee_deal_id ? ` / 取引ID: ${r.freee_deal_id}` : ''}`}
+            >
+              送信済み
+            </span>
           )}
         </td>
 
@@ -546,8 +559,13 @@ const DashboardPage: React.FC = () => {
               className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
             />
             {renderStatusBadge(r.status)}
-            {sentIds.has(r.id) && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">送信済み</span>
+            {!!r.freee_sent_at && (
+              <span 
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                title={`送信日時: ${r.freee_sent_at}${r.freee_deal_id ? ` / 取引ID: ${r.freee_deal_id}` : ''}`}
+              >
+                送信済み
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -735,7 +753,7 @@ const DashboardPage: React.FC = () => {
           <div className="flex-1" />
           <button
             onClick={sendToFreee}
-            disabled={sending || receipts.filter((r) => r.status === 'approved' && !sentIds.has(r.id)).length === 0}
+            disabled={sending || receipts.filter((r) => r.status === 'approved' && !r.freee_sent_at).length === 0}
             className="px-4 py-2 rounded-md text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {sending ? '送信中...' : '承認済みをfreeeに送信'}

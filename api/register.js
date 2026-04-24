@@ -248,6 +248,26 @@ export default async function handler(request, response) {
 
     if (res.ok) {
       const data = await res.json();
+      
+      if (receipt_id) {
+        try {
+          const supabase = await getSupabase();
+          const { error: updateError } = await supabase
+            .from('receipts')
+            .update({
+              freee_sent_at: new Date().toISOString(),
+              freee_deal_id: data.deal?.id ? String(data.deal.id) : null,
+            })
+            .eq('id', receipt_id);
+            
+          if (updateError) {
+            console.error('freee_sent_at update error:', updateError.message);
+          }
+        } catch (e) {
+          console.error('freee_sent_at update exception:', e.message);
+        }
+      }
+
       return response.status(200).json({
         success: true,
         deal_id: data.deal?.id,

@@ -19,7 +19,7 @@ async function getSupabase() {
 async function handleGet(req, res) {
   try {
     const supabase = await getSupabase();
-    const { status, page: pageStr, limit: limitStr } = req.query || {};
+    const { status, sent, page: pageStr, limit: limitStr } = req.query || {};
     const page = Math.max(1, parseInt(pageStr, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(limitStr, 10) || 50));
     const offset = (page - 1) * limit;
@@ -34,6 +34,12 @@ async function handleGet(req, res) {
     if (status) {
       const statuses = Array.isArray(status) ? status : [status];
       query = query.in('status', statuses);
+    }
+
+    if (sent === 'true') {
+      query = query.not('freee_sent_at', 'is', null);
+    } else if (sent === 'false') {
+      query = query.is('freee_sent_at', null);
     }
 
     const { data, count, error } = await query;
