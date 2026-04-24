@@ -46,13 +46,15 @@ const SplitEditModal: React.FC<SplitEditModalProps> = ({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totalAmount, setTotalAmount] = useState(receipt.result_json?.amount ?? 0);
+  const [releasing, setReleasing] = useState(false);
 
-  const totalAmount = receipt.result_json?.amount ?? 0;
   const sum = splits.reduce((a, s) => a + (Number(s.amount) || 0), 0);
   const diff = totalAmount - sum;
   const isMatched = diff === 0 && splits.length >= 2;
 
   const canSave = useMemo(() => {
+    if (!Number.isInteger(totalAmount) || totalAmount <= 0) return false;
     if (!isMatched) return false;
     if (date === '') return false;
     if (store === '') return false;
@@ -64,21 +66,22 @@ const SplitEditModal: React.FC<SplitEditModalProps> = ({
       if (s.description !== undefined && s.description.length > 200) return false;
       return true;
     });
-  }, [isMatched, date, store, splits, categories]);
+  }, [isMatched, date, store, splits, categories, totalAmount]);
 
   const initialSnapshot = useMemo(() => {
     return JSON.stringify({
       date: receipt.result_json?.date ?? '',
       store: receipt.result_json?.store ?? '',
       sectionId: receipt.section_id ?? '',
+      amount: receipt.result_json?.amount ?? 0,
       splits: receipt.result_json?.splits ?? [],
     });
   }, [receipt]);
 
   const hasUnsavedChanges = useMemo(() => {
-    const current = JSON.stringify({ date, store, sectionId, splits });
+    const current = JSON.stringify({ date, store, sectionId, amount: totalAmount, splits });
     return current !== initialSnapshot;
-  }, [date, store, sectionId, splits, initialSnapshot]);
+  }, [date, store, sectionId, splits, initialSnapshot, totalAmount]);
 
   const updateSplit = (i: number, patch: Partial<SplitItem>) => {
     setSplits((prev) => {
@@ -153,6 +156,50 @@ const SplitEditModal: React.FC<SplitEditModalProps> = ({
     }
   };
 
+  const handleRelease = async () => {
+    if (releasing || saving) return;
+    if (!Number.isInteger(totalAmount) || totalAmount <= 0) {
+      setError('総額が正しくありません');
+      return;
+    }
+    if (!date || !store.trim()) {
+      setError('日付・店名を入力してください');
+      return;
+    }
+    if (!window.confirm('分割設定を解除して単一レシートに戻します。よろしいですか？')) return;
+    setReleasing(true);
+    setError(null);
+    try {
+      const payload = {
+        ids: [receipt.id],
+        action: 'update' as const,
+        data: {
+          date,
+          store,
+          amount: totalAmount,
+          category: splits[0]?.category ?? receipt.result_json?.category ?? '',
+          tax_code: splits[0]?.tax_code ?? receipt.result_json?.tax_code ?? null,
+          splits: null,
+        },
+        section_id: sectionId,
+      };
+      const res = await fetch('/api/receipts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as any));
+        throw new Error(data.error ?? '解除に失敗しました');
+      }
+      await onSaved();
+    } catch (e: any) {
+      setError(e.message ?? '解除に失敗しました');
+    } finally {
+      setReleasing(false);
+    }
+  };
+
   useEffect(() => {
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -191,13 +238,22 @@ const SplitEditModal: React.FC<SplitEditModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-gray-900">分割伝票を編集</h2>
-            <button
-              onClick={handleClose}
-              className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none"
-              aria-label="Close"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleRelease}
+                disabled={releasing || saving || splits.length === 0}
+                className="text-xs font-medium text-red-600 hover:text-red-700 underline disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {releasing ? '解除中…' : '分割を解除して保存'}
+              </button>
+              <button
+                onClick={handleClose}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Common fields */}
@@ -237,9 +293,14 @@ const SplitEditModal: React.FC<SplitEditModalProps> = ({
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-gray-700">総額</label>
-              <div className="border border-gray-200 rounded-md px-3 py-2 text-sm bg-gray-50 text-gray-700 font-medium">
-                {formatYen(totalAmount)}
-              </div>
+              <input
+                type="number"
+                step={1}
+                min={1}
+                value={totalAmount || ''}
+                onChange={(e) => setTotalAmount(Number(e.target.value) || 0)}
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
             </div>
           </div>
 
