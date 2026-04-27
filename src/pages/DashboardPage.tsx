@@ -3,9 +3,8 @@
 // 新: ~250 行 — useReceipts / useBulkActions Hook と
 //     ReceiptTableRow / ReceiptMobileCard / ImagePreviewModal 子コンポーネントを組み立てるだけ
 
-import React, { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import SplitEditModal from '../components/SplitEditModal';
 import {
   CATEGORIES,
   SECTIONS,
@@ -17,6 +16,7 @@ import { useBulkActions } from './dashboard/useBulkActions';
 import { ReceiptTableRow } from './dashboard/ReceiptTableRow';
 import { ReceiptMobileCard } from './dashboard/ReceiptMobileCard';
 import { ImagePreviewModal } from './dashboard/ImagePreviewModal';
+const SplitEditModal = lazy(() => import('../components/SplitEditModal'));
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -257,18 +257,20 @@ const DashboardPage: React.FC = () => {
       <ImagePreviewModal url={b.previewUrl} onClose={() => b.setPreviewUrl(null)} />
 
       {/* Split edit modal */}
-      {b.splitModalReceipt && (
-        <SplitEditModal
-          receipt={b.splitModalReceipt as React.ComponentProps<typeof SplitEditModal>['receipt']}
-          onClose={b.closeSplitModal}
-          onSaved={async () => {
-            b.closeSplitModal();
-            await refetch();
-          }}
-          categories={[...CATEGORIES]}
-          sections={[...SECTIONS]}
-        />
-      )}
+      <Suspense fallback={null}>
+        {b.splitModalReceipt && (
+          <SplitEditModal
+            receipt={b.splitModalReceipt as React.ComponentProps<typeof SplitEditModal>['receipt']}
+            onClose={b.closeSplitModal}
+            onSaved={async () => {
+              b.closeSplitModal();
+              await refetch();
+            }}
+            categories={[...CATEGORIES]}
+            sections={[...SECTIONS]}
+          />
+        )}
+      </Suspense>
     </div>
   );
 };

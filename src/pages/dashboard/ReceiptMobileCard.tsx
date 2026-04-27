@@ -104,7 +104,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
               onClick={(e) => { e.stopPropagation(); setPreviewUrl(r.image_url); }}
               className="w-10 h-10 rounded-lg overflow-hidden border border-gray-200"
             >
-              <img src={r.image_url} alt="receipt" className="w-full h-full object-cover" />
+              <img loading="lazy" decoding="async" src={r.image_url} alt="receipt" className="w-full h-full object-cover" />
             </button>
           )}
         </div>

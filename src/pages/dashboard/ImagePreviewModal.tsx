@@ -26,7 +26,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ url, onClo
         >
           ✕
         </button>
-        <img src={url} alt="receipt preview" className="max-w-full max-h-[85vh] object-contain" />
+        <img decoding="async" src={url} alt="receipt preview" className="max-w-full max-h-[85vh] object-contain" />
       </div>
     </div>
   );

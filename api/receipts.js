@@ -1,6 +1,31 @@
 import { getSupabase } from './lib/supabase.js';
 import { logger } from './lib/logger.js';
 
+// Signed URL in-memory cache (Loop A #2)
+// - Module scope: persists across warm Vercel Function invocations, reset on cold start.
+// - TTL 50 min < Supabase signed URL 1h to leave 10 min margin.
+// - FIFO eviction at MAX_ENTRIES to prevent unbounded growth.
+const SIGNED_URL_TTL_MS = 50 * 60 * 1000;
+const SIGNED_URL_TTL_SEC = 60 * 60;
+const SIGNED_URL_MAX_ENTRIES = 500;
+const _signedUrlCache = new Map();
+
+async function getCachedSignedUrl(supabase, storagePath) {
+  const now = Date.now();
+  const hit = _signedUrlCache.get(storagePath);
+  if (hit && hit.expiresAt > now) return hit.url;
+  const { data, error } = await supabase.storage
+    .from('receipts')
+    .createSignedUrl(storagePath, SIGNED_URL_TTL_SEC);
+  if (error || !data?.signedUrl) return null;
+  if (_signedUrlCache.size >= SIGNED_URL_MAX_ENTRIES) {
+    const firstKey = _signedUrlCache.keys().next().value;
+    _signedUrlCache.delete(firstKey);
+  }
+  _signedUrlCache.set(storagePath, { url: data.signedUrl, expiresAt: now + SIGNED_URL_TTL_MS });
+  return data.signedUrl;
+}
+
 const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
 const ALLOWED_TAX_CODES = [136, 137];
 const MAX_DESCRIPTION_LENGTH = 200;
@@ -88,10 +113,7 @@ async function handleGet(req, res) {
       (data || []).map(async (receipt) => {
         let image_url = null;
         if (receipt.storage_path) {
-          const { data: signedData } = await supabase.storage
-            .from('receipts')
-            .createSignedUrl(receipt.storage_path, 3600); // 1 hour
-          image_url = signedData?.signedUrl || null;
+          image_url = await getCachedSignedUrl(supabase, receipt.storage_path);
         }
         return { ...receipt, image_url };
       })

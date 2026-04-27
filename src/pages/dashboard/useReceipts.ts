@@ -108,12 +108,31 @@ export function useReceipts(): UseReceiptsResult {
 
   // ─── 自動更新タイマー ────────────────────────────────────────────────
   useEffect(() => {
-    timerRef.current = setInterval(() => {
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchReceipts(true);
       fetchTabCounts();
-    }, AUTO_REFRESH_MS);
+    };
+    const id = setInterval(tick, AUTO_REFRESH_MS);
+    timerRef.current = id;
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        fetchReceipts(true);
+        fetchTabCounts();
+      }
+    };
+    const onFocus = () => {
+      fetchReceipts(true);
+      fetchTabCounts();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
     };
   }, [fetchReceipts, fetchTabCounts]);
 
