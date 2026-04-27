@@ -1,70 +1,19 @@
 import { freeeApiFetch } from './lib/freee-auth.js';
-
-const CATEGORY_MAP = {
-  '消耗品費': 929160659,
-  '接待交際費': 929160653,
-  '交際費': 929160653,
-  '会議費': 929160654,
-  '雑費': 929160680,
-  '仕入高': 929160634,
-  '交通費': 929160680,   // TODO: freeeに科目追加後に更新
-  '通信費': 929160680,   // TODO: freeeに科目追加後に更新
-};
-
-const SECTION_MAP = {
-  'スーク': 3415042,
-  '金魚': 3449507,
-  'KITUNE': 3415041,
-  'Goodbye': 3448649,
-  'LR': 3423764,
-  '狛犬': 3834777,
-  'moumou': 3450115,
-  'SABABA HQ': 3923010,
-  '大輝HQ': 3923009,
-};
-
-const DEFAULT_ACCOUNT_ITEM_ID = 929160680; // 雑費
-const TAX_CODE = 136; // 課対仕入10%
-const WALLET_ID = 6815911;
+import {
+  CATEGORY_MAP,
+  DEFAULT_ACCOUNT_ITEM_ID,
+  TAX_CODE,
+  uploadReceiptToFreee,
+  findOrCreatePartner,
+  createDealAndMarkReceipt,
+  buildDetails,
+  resolveSectionId,
+  validateSplitsFromDb,
+} from './lib/freee.js';
 
 async function getSupabase() {
   const { createClient } = await import('@supabase/supabase-js');
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-}
-
-function validateSplitsFromDb(arr, amount) {
-  if (!Array.isArray(arr) || arr.length < 2) return false;
-  let sum = 0;
-  for (const split of arr) {
-    if (typeof split.category !== 'string' || !CATEGORY_MAP[split.category]) return false;
-    if (typeof split.amount !== 'number' || split.amount <= 0) return false;
-    if (split.tax_code !== 136 && split.tax_code !== 137) return false;
-    sum += split.amount;
-  }
-  if (sum !== amount) return false;
-  return true;
-}
-
-async function uploadReceiptToFreee(companyId, receiptData, mimeType, filename) {
-  const { FormData, Blob } = await import('node:buffer').then(() => globalThis).catch(() => ({}));
-
-  const formData = new FormData();
-  formData.append('company_id', String(companyId));
-  formData.append('receipt', new Blob([receiptData], { type: mimeType }), filename);
-
-  const res = await freeeApiFetch('https://api.freee.co.jp/api/1/receipts', {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    console.error('freee receipt upload error:', err);
-    return null;
-  }
-
-  const data = await res.json();
-  return data.receipt?.id || null;
 }
 
 export default async function handler(request, response) {
@@ -172,7 +121,7 @@ export default async function handler(request, response) {
     let freeeReceiptId = null;
     let receipt = null;
     let result_json = null;
-    
+
     if (receipt_id) {
       const supabase = await getSupabase();
       const { data: receiptData, error: receiptSelectError } = await supabase
@@ -187,7 +136,7 @@ export default async function handler(request, response) {
       receipt = receiptData;
       if (receipt) {
         result_json = receipt.result_json;
-        
+
         const { data: fileData, error: downloadError } = await supabase.storage
           .from('receipts')
           .download(receipt.storage_path);
@@ -214,7 +163,7 @@ export default async function handler(request, response) {
     // splits, tax_code 補完
     const dbSplits = Array.isArray(result_json?.splits) && result_json.splits.length >= 2 ? result_json.splits : undefined;
     let effectiveSplits = hasSplits ? splits : undefined;
-    
+
     if (!hasSplits && !explicitSplits && dbSplits) {
       if (validateSplitsFromDb(dbSplits, amount)) {
         effectiveSplits = dbSplits;
@@ -224,139 +173,55 @@ export default async function handler(request, response) {
     }
 
     const effectiveTaxCode = tax_code ?? result_json?.tax_code ?? TAX_CODE;
-    const effectiveHasSplits = Array.isArray(effectiveSplits) && effectiveSplits.length >= 2;
 
     // 単一モード時の tax_code フォールバック
     const singleTaxCode = (effectiveTaxCode === 136 || effectiveTaxCode === 137) ? effectiveTaxCode : TAX_CODE;
 
     // 2. 取引先（partner）を検索 or 新規作成
-    let partnerId = null;
-    const searchRes = await freeeApiFetch(
-      `https://api.freee.co.jp/api/1/partners?company_id=${companyId}&keyword=${encodeURIComponent(store)}`
-    );
-    if (!searchRes.ok) {
-      return response.status(500).json({ error: '取引先の検索に失敗しました' });
+    const partnerResult = await findOrCreatePartner(companyId, store);
+    if (partnerResult.error) {
+      const body = { error: partnerResult.error };
+      if (partnerResult.detail) body.detail = partnerResult.detail;
+      return response.status(500).json(body);
     }
-    const searchData = await searchRes.json();
-    const exact = (searchData.partners || []).find((p) => p.name === store);
-    if (exact) {
-      partnerId = exact.id;
-    } else {
-      // 完全一致なし → 新規作成
-      const createRes = await freeeApiFetch('https://api.freee.co.jp/api/1/partners', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ company_id: companyId, name: store }),
-      });
-      if (!createRes.ok) {
-        const err = await createRes.text();
-        console.error('Partner create failed:', err);
-        return response.status(500).json({ error: '取引先の作成に失敗しました', detail: err });
-      } else {
-        const createData = await createRes.json();
-        partnerId = createData.partner?.id || null;
-      }
-    }
+    const partnerId = partnerResult.partnerId;
 
     // 3. 部門IDの解決
     const sectionName = section_id || (receipt_id && receipt ? receipt.section_id : null);
-    const freeSectionId = sectionName ? SECTION_MAP[sectionName] : null;
+    const freeeSectionId = resolveSectionId(sectionName);
 
     // 4. details の構築
-    const buildDetail = (item) => {
-      return {
-        account_item_id: CATEGORY_MAP[item.category] ?? DEFAULT_ACCOUNT_ITEM_ID,
-        amount: item.amount,
-        description: item.description || store || '',
-        tax_code: (item.tax_code === 136 || item.tax_code === 137) ? item.tax_code : 136,
-      };
-    };
-
-    let details;
-    if (effectiveHasSplits) {
-      details = effectiveSplits.map(split => {
-        const detail = buildDetail(split);
-        return detail;
-      });
-    } else {
-      const singleItem = {
-        category: category,
-        amount: amount,
-        description: store || '',
-        tax_code: singleTaxCode,
-      };
-      details = [buildDetail(singleItem)];
-    }
-
-    if (freeSectionId) {
-      details.forEach(d => d.section_id = freeSectionId);
-    }
-
-    // 5. 取引を作成
-    const dealBody = {
-      company_id: companyId,
-      issue_date: date,
-      type: 'expense',
-      details,
-      payments: [
-        {
-          date,
-          from_walletable_type: 'wallet',
-          from_walletable_id: WALLET_ID,
-          amount,
-        },
-      ],
-    };
-
-    if (partnerId) {
-      dealBody.partner_id = partnerId;
-    }
-
-    if (freeeReceiptId) {
-      dealBody.receipt_ids = [freeeReceiptId];
-    }
-
-    const res = await freeeApiFetch('https://api.freee.co.jp/api/1/deals', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(dealBody),
+    const details = buildDetails({
+      splits: effectiveSplits,
+      category,
+      amount,
+      store,
+      singleTaxCode,
+      freeeSectionId,
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      
-      if (receipt_id) {
-        try {
-          const supabase = await getSupabase();
-          const { error: updateError } = await supabase
-            .from('receipts')
-            .update({
-              freee_sent_at: new Date().toISOString(),
-              freee_deal_id: data.deal?.id ? String(data.deal.id) : null,
-            })
-            .eq('id', receipt_id);
-            
-          if (updateError) {
-            console.error('freee_sent_at update error:', updateError.message);
-          }
-        } catch (e) {
-          console.error('freee_sent_at update exception:', e.message);
-        }
-      }
+    // 5. 取引を作成 + receipts 反映
+    const dealResult = await createDealAndMarkReceipt({
+      companyId,
+      date,
+      details,
+      amount,
+      partnerId,
+      freeeReceiptId,
+      receiptId: receipt_id,
+      getSupabase,
+    });
 
+    if (dealResult.ok) {
       return response.status(200).json({
         success: true,
-        deal_id: data.deal?.id,
-        receipt_uploaded: !!freeeReceiptId,
+        deal_id: dealResult.dealId,
+        receipt_uploaded: dealResult.receiptUploaded,
       });
     } else {
-      const err = await res.text();
-      console.error('freee API error:', err);
-      return response.status(500).json({ error: '取引の登録に失敗しました', detail: err });
+      const body = { error: dealResult.error };
+      if (dealResult.detail) body.detail = dealResult.detail;
+      return response.status(dealResult.status || 500).json(body);
     }
   } catch (e) {
     console.error('register error:', e.message);

@@ -77,3 +77,15 @@ export interface AnalysisResult {
   tax_code?: number | null;
   splits?: SplitItem[] | null;
 }
+
+/**
+ * SplitEditModal が受け取る receipt の最小形。
+ * Receipt から SplitEditModal が必要とするフィールドのみを抽出。
+ * DashboardPage 側の `b.splitModalReceipt as ...` キャストもこの型に置き換え可。
+ */
+export interface SplitEditTarget {
+  id: string;
+  image_url: string | null;
+  section_id: string | null;
+  result_json: ReceiptResult | null;
+}
