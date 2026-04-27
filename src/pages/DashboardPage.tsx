@@ -2,8 +2,9 @@
 // 旧: 992 行のモノリシック実装
 // 新: ~250 行 — useReceipts / useBulkActions Hook と
 //     ReceiptTableRow / ReceiptMobileCard / ImagePreviewModal 子コンポーネントを組み立てるだけ
+// Loop B: React.memo + commonRowProps useMemo 化で大規模描画時の re-render を抑制
 
-import React, { lazy, Suspense, useEffect } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CATEGORIES,
@@ -16,6 +17,7 @@ import { useBulkActions } from './dashboard/useBulkActions';
 import { ReceiptTableRow } from './dashboard/ReceiptTableRow';
 import { ReceiptMobileCard } from './dashboard/ReceiptMobileCard';
 import { ImagePreviewModal } from './dashboard/ImagePreviewModal';
+import type { ReceiptResult } from '../types/receipt';
 const SplitEditModal = lazy(() => import('../components/SplitEditModal'));
 
 const DashboardPage: React.FC = () => {
@@ -52,23 +54,39 @@ const DashboardPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  // 行コンポーネントへ流し込む共通 props
-  const rowProps = {
-    editingId: b.editingId,
-    editDraft: b.editDraft,
-    editSectionId: b.editSectionId,
-    setEditDraft: b.setEditDraft,
-    setEditSectionId: b.setEditSectionId,
-    startEdit: b.startEdit,
-    cancelEdit: b.cancelEdit,
-    saveEdit: b.saveEdit,
-    selected: b.selected,
-    toggleSelect: b.toggleSelect,
-    expandedIds: b.expandedIds,
-    toggleExpand: b.toggleExpand,
-    openSplitModal: b.openSplitModal,
-    setPreviewUrl: b.setPreviewUrl,
-  };
+  // useBulkActions の setEditDraft は (d: ReceiptResult | null) => void だが、
+  // 行コンポーネント側は (d: ReceiptResult) => void を受け取るためラップする
+  const handleSetEditDraft = useCallback(
+    (d: ReceiptResult) => b.setEditDraft(d),
+    [b.setEditDraft],
+  );
+
+  // 行コンポーネントへ流し込む共通 props（行を跨いで不変なコールバック群のみ）
+  // Set / Object 等の参照不安定値は含めず、行ごとに直接 props として渡す
+  const commonRowProps = useMemo(
+    () => ({
+      setEditDraft: handleSetEditDraft,
+      setEditSectionId: b.setEditSectionId,
+      setPreviewUrl: b.setPreviewUrl,
+      startEdit: b.startEdit,
+      cancelEdit: b.cancelEdit,
+      saveEdit: b.saveEdit,
+      toggleSelect: b.toggleSelect,
+      toggleExpand: b.toggleExpand,
+      openSplitModal: b.openSplitModal,
+    }),
+    [
+      handleSetEditDraft,
+      b.setEditSectionId,
+      b.setPreviewUrl,
+      b.startEdit,
+      b.cancelEdit,
+      b.saveEdit,
+      b.toggleSelect,
+      b.toggleExpand,
+      b.openSplitModal,
+    ],
+  );
 
   const approvedUnsentCount = receipts.filter(
     (r) => r.status === 'approved' && !r.freee_sent_at,
@@ -212,18 +230,42 @@ const DashboardPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {receipts.map((r) => (
-                      <ReceiptTableRow key={r.id} receipt={r} {...rowProps} />
-                    ))}
+                    {receipts.map((r) => {
+                      const isEditing = b.editingId === r.id;
+                      return (
+                        <ReceiptTableRow
+                          key={r.id}
+                          receipt={r}
+                          isEditing={isEditing}
+                          isSelected={b.selected.has(r.id)}
+                          isExpanded={b.expandedIds.has(r.id)}
+                          editDraft={isEditing ? b.editDraft : null}
+                          editSectionId={isEditing ? b.editSectionId : null}
+                          {...commonRowProps}
+                        />
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               {/* Mobile cards */}
               <div className="md:hidden p-4 space-y-3">
-                {receipts.map((r) => (
-                  <ReceiptMobileCard key={r.id} receipt={r} {...rowProps} />
-                ))}
+                {receipts.map((r) => {
+                  const isEditing = b.editingId === r.id;
+                  return (
+                    <ReceiptMobileCard
+                      key={r.id}
+                      receipt={r}
+                      isEditing={isEditing}
+                      isSelected={b.selected.has(r.id)}
+                      isExpanded={b.expandedIds.has(r.id)}
+                      editDraft={isEditing ? b.editDraft : null}
+                      editSectionId={isEditing ? b.editSectionId : null}
+                      {...commonRowProps}
+                    />
+                  );
+                })}
               </div>
             </>
           )}

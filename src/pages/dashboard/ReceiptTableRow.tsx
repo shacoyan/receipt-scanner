@@ -10,28 +10,28 @@ import { CategoryCell, EditableCell, StatusBadge } from './cells';
 export interface ReceiptTableRowProps {
   receipt: Receipt;
   // 編集
-  editingId: string | null;
+  isEditing: boolean;
   editDraft: ReceiptResult | null;
   editSectionId: string | null;
-  setEditDraft: (d: ReceiptResult | null) => void;
+  setEditDraft: (d: ReceiptResult) => void;
   setEditSectionId: (s: string | null) => void;
   startEdit: (r: Receipt) => void;
   cancelEdit: () => void;
   saveEdit: () => Promise<void>;
   // 選択
-  selected: Set<string>;
+  isSelected: boolean;
   toggleSelect: (id: string) => void;
   // 展開
-  expandedIds: Set<string>;
+  isExpanded: boolean;
   toggleExpand: (id: string) => void;
   // モーダル
   openSplitModal: (r: Receipt) => void;
   setPreviewUrl: (u: string | null) => void;
 }
 
-export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
+const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
   receipt: r,
-  editingId,
+  isEditing,
   editDraft,
   editSectionId,
   setEditDraft,
@@ -39,20 +39,18 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
   startEdit,
   cancelEdit,
   saveEdit,
-  selected,
+  isSelected,
   toggleSelect,
-  expandedIds,
+  isExpanded,
   toggleExpand,
   openSplitModal,
   setPreviewUrl,
 }) => {
-  const isEditing = editingId === r.id;
   const isError = r.status === 'error';
   const result = isEditing && editDraft ? editDraft : r.result_json;
   const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
   const isSplit = !!(r.result_json?.splits && r.result_json.splits.length >= 2);
 
-  const setEditDraftSafe = (d: ReceiptResult) => setEditDraft(d);
 
   return (
     <React.Fragment key={r.id}>
@@ -72,7 +70,7 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
         <td className="px-3 py-3">
           <input
             type="checkbox"
-            checked={selected.has(r.id)}
+            checked={isSelected}
             onChange={() => toggleSelect(r.id)}
             onClick={(e) => e.stopPropagation()}
             className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
@@ -99,7 +97,7 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
             field="date"
             isEditing={isEditing}
             editDraft={editDraft}
-            setEditDraft={setEditDraftSafe}
+            setEditDraft={setEditDraft}
           />
         </td>
 
@@ -110,7 +108,7 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
             field="store"
             isEditing={isEditing}
             editDraft={editDraft}
-            setEditDraft={setEditDraftSafe}
+            setEditDraft={setEditDraft}
           />
           {isError && r.error_message && (
             <p className="mt-1 text-xs text-red-600 font-semibold truncate max-w-[220px]" title={r.error_message}>
@@ -128,7 +126,7 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
                 field="amount"
                 isEditing={true}
                 editDraft={editDraft}
-                setEditDraft={setEditDraftSafe}
+                setEditDraft={setEditDraft}
               />
             )
             : <span className="text-gray-700">{result?.amount != null ? formatYen(result.amount) : '-'}</span>
@@ -142,10 +140,10 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
             isEditing={isEditing}
             result={result}
             isSplit={isSplit}
-            expandedIds={expandedIds}
+            isExpanded={isExpanded}
             toggleExpand={toggleExpand}
             editDraft={editDraft}
-            setEditDraft={setEditDraftSafe}
+            setEditDraft={setEditDraft}
           />
         </td>
 
@@ -207,7 +205,7 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
           )}
         </td>
       </tr>
-      {isSplit && expandedIds.has(r.id) && (
+      {isSplit && isExpanded && (
         <tr className="bg-indigo-50/30">
           <td colSpan={9} className="px-8 py-2">
             <div className="text-xs text-gray-500 mb-1">分割内訳</div>
@@ -246,3 +244,6 @@ export const ReceiptTableRow: React.FC<ReceiptTableRowProps> = ({
     </React.Fragment>
   );
 };
+
+ReceiptTableRowImpl.displayName = 'ReceiptTableRow';
+export const ReceiptTableRow = React.memo(ReceiptTableRowImpl);

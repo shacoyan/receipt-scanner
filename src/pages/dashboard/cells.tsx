@@ -85,7 +85,7 @@ export interface CategoryCellProps {
   isEditing: boolean;
   result: ReceiptResult | null;
   isSplit: boolean;
-  expandedIds: Set<string>;
+  isExpanded: boolean;
   toggleExpand: (id: string) => void;
   editDraft: ReceiptResult | null;
   setEditDraft: (d: ReceiptResult) => void;
@@ -96,7 +96,7 @@ export const CategoryCell: React.FC<CategoryCellProps> = ({
   isEditing,
   result,
   isSplit,
-  expandedIds,
+  isExpanded,
   toggleExpand,
   editDraft,
   setEditDraft,
@@ -118,7 +118,7 @@ export const CategoryCell: React.FC<CategoryCellProps> = ({
             onClick={(e) => { e.stopPropagation(); toggleExpand(receipt.id); }}
             className="ml-1 text-xs text-indigo-600 hover:text-indigo-800"
           >
-            分割{splits.length}件 {expandedIds.has(receipt.id) ? '▾' : '▸'}
+            分割{splits.length}件 {isExpanded ? '▾' : '▸'}
           </button>
         )}
       </span>

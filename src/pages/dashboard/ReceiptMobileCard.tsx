@@ -10,28 +10,28 @@ import { CategoryCell, EditableCell, StatusBadge } from './cells';
 export interface ReceiptMobileCardProps {
   receipt: Receipt;
   // 編集
-  editingId: string | null;
+  isEditing: boolean;
   editDraft: ReceiptResult | null;
   editSectionId: string | null;
-  setEditDraft: (d: ReceiptResult | null) => void;
+  setEditDraft: (d: ReceiptResult) => void;
   setEditSectionId: (s: string | null) => void;
   startEdit: (r: Receipt) => void;
   cancelEdit: () => void;
   saveEdit: () => Promise<void>;
   // 選択
-  selected: Set<string>;
+  isSelected: boolean;
   toggleSelect: (id: string) => void;
   // 展開
-  expandedIds: Set<string>;
+  isExpanded: boolean;
   toggleExpand: (id: string) => void;
   // モーダル
   openSplitModal: (r: Receipt) => void;
   setPreviewUrl: (u: string | null) => void;
 }
 
-export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
+const ReceiptMobileCardImpl: React.FC<ReceiptMobileCardProps> = ({
   receipt: r,
-  editingId,
+  isEditing,
   editDraft,
   editSectionId,
   setEditDraft,
@@ -39,20 +39,18 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
   startEdit,
   cancelEdit,
   saveEdit,
-  selected,
+  isSelected,
   toggleSelect,
-  expandedIds,
+  isExpanded,
   toggleExpand,
   openSplitModal,
   setPreviewUrl,
 }) => {
-  const isEditing = editingId === r.id;
   const isError = r.status === 'error';
   const result = isEditing && editDraft ? editDraft : r.result_json;
   const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
   const isSplit = !!(r.result_json?.splits && r.result_json.splits.length >= 2);
 
-  const setEditDraftSafe = (d: ReceiptResult) => setEditDraft(d);
 
   return (
     <div key={r.id} className={[
@@ -69,7 +67,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={selected.has(r.id)}
+            checked={isSelected}
             onChange={() => toggleSelect(r.id)}
             onClick={(e) => e.stopPropagation()}
             className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
@@ -126,7 +124,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                   field="date"
                   isEditing={isEditing}
                   editDraft={editDraft}
-                  setEditDraft={setEditDraftSafe}
+                  setEditDraft={setEditDraft}
                 />
               </div>
             </div>
@@ -138,7 +136,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                   field="store"
                   isEditing={isEditing}
                   editDraft={editDraft}
-                  setEditDraft={setEditDraftSafe}
+                  setEditDraft={setEditDraft}
                 />
               </div>
             </div>
@@ -152,7 +150,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                       field="amount"
                       isEditing={true}
                       editDraft={editDraft}
-                      setEditDraft={setEditDraftSafe}
+                      setEditDraft={setEditDraft}
                     />
                   )
                   : <span className="font-medium text-gray-700">{result?.amount != null ? formatYen(result.amount) : '-'}</span>
@@ -167,10 +165,10 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                   isEditing={isEditing}
                   result={result}
                   isSplit={isSplit}
-                  expandedIds={expandedIds}
+                  isExpanded={isExpanded}
                   toggleExpand={toggleExpand}
                   editDraft={editDraft}
-                  setEditDraft={setEditDraftSafe}
+                  setEditDraft={setEditDraft}
                 />
               </div>
             </div>
@@ -186,7 +184,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                 field="date"
                 isEditing={isEditing}
                 editDraft={editDraft}
-                setEditDraft={setEditDraftSafe}
+                setEditDraft={setEditDraft}
               />
             </div>
           </div>
@@ -198,7 +196,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                 field="store"
                 isEditing={isEditing}
                 editDraft={editDraft}
-                setEditDraft={setEditDraftSafe}
+                setEditDraft={setEditDraft}
               />
             </div>
           </div>
@@ -212,7 +210,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                     field="amount"
                     isEditing={true}
                     editDraft={editDraft}
-                    setEditDraft={setEditDraftSafe}
+                    setEditDraft={setEditDraft}
                   />
                 )
                 : <span className="font-medium text-gray-700">{result?.amount != null ? formatYen(result.amount) : '-'}</span>
@@ -227,10 +225,10 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
                 isEditing={isEditing}
                 result={result}
                 isSplit={isSplit}
-                expandedIds={expandedIds}
+                isExpanded={isExpanded}
                 toggleExpand={toggleExpand}
                 editDraft={editDraft}
-                setEditDraft={setEditDraftSafe}
+                setEditDraft={setEditDraft}
               />
             </div>
           </div>
@@ -256,7 +254,7 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
         </div>
       )}
 
-      {isSplit && expandedIds.has(r.id) && (
+      {isSplit && isExpanded && (
         <div className="mt-3 pt-3 border-t border-gray-200">
           <div className="text-xs text-gray-500 mb-1">分割内訳</div>
           <div className="space-y-1">
@@ -284,3 +282,6 @@ export const ReceiptMobileCard: React.FC<ReceiptMobileCardProps> = ({
     </div>
   );
 };
+
+ReceiptMobileCardImpl.displayName = 'ReceiptMobileCard';
+export const ReceiptMobileCard = React.memo(ReceiptMobileCardImpl);
