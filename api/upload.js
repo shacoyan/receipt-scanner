@@ -1,5 +1,6 @@
 import formidable from 'formidable';
 import crypto from 'crypto';
+import { logger } from './lib/logger.js';
 
 export const config = {
   api: {
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
 
       // Validate: only image files allowed
       if (!mimeType.startsWith('image/')) {
-        console.warn(`Skipped non-image file: ${file.originalFilename} (${mimeType})`);
+        logger.warn('upload: skipped non-image', { fileName: file.originalFilename, mimeType });
         continue;
       }
 
@@ -59,7 +60,7 @@ export default async function handler(req, res) {
         });
 
       if (uploadError) {
-        console.error(`Upload error for ${file.originalFilename}:`, uploadError.message);
+        logger.error('upload: storage upload failed', { err: uploadError, fileName: file.originalFilename });
         continue;
       }
 
@@ -79,7 +80,7 @@ export default async function handler(req, res) {
         .insert(insertData);
 
       if (insertError) {
-        console.error(`DB insert error for ${file.originalFilename}:`, insertError.message);
+        logger.error('upload: db insert failed', { err: insertError, fileName: file.originalFilename });
         continue;
       }
 
@@ -99,7 +100,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, count: ids.length, ids });
   } catch (error) {
-    console.error('Upload error:', error.message, error.stack);
+    logger.error('upload: handler error', { err: error });
     return res.status(500).json({ error: error.message });
   }
 }

@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { logger } from './logger.js';
 
 const TOKEN_URL = 'https://accounts.secure.freee.co.jp/public_api/token';
 
@@ -63,9 +64,9 @@ export async function refreshToken() {
       env = env.replace(/FREEE_REFRESH_TOKEN=.*/, `FREEE_REFRESH_TOKEN=${data.refresh_token}`);
     }
     writeFileSync(envPath, env);
-    console.log('freee: トークンをリフレッシュしました');
+    logger.info('freee: token refreshed');
   } catch (e) {
-    console.warn('freee: .envファイルの更新に失敗しました（process.envは更新済み）:', e.message);
+    logger.warn('freee: .env update failed (process.env updated)', { err: e });
   }
 
   return data.access_token;
@@ -92,14 +93,14 @@ export async function freeeApiFetch(url, options = {}) {
 
   // 401なら1回だけリフレッシュしてリトライ
   if (res.status === 401) {
-    console.log('freee: 401を受信、トークンをリフレッシュします...');
+    logger.info('freee: 401 received, refreshing token');
     try {
       const newToken = await refreshTokenOnce();
       const retryHeaders = { ...options.headers };
       retryHeaders['Authorization'] = `Bearer ${newToken}`;
       return fetch(url, { ...options, headers: retryHeaders });
     } catch (e) {
-      console.error('freee: トークンリフレッシュに失敗:', e.message);
+      logger.error('freee: token refresh failed', { err: e });
       return res;
     }
   }

@@ -1,4 +1,5 @@
 import { getSupabase } from './lib/supabase.js';
+import { logger } from './lib/logger.js';
 
 const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
 const ALLOWED_TAX_CODES = [136, 137];
@@ -40,7 +41,7 @@ async function handleGetCounts(_req, res) {
       error: errorCnt.count || 0,
     });
   } catch (error) {
-    console.error('Receipts counts error:', error.message, error.stack);
+    logger.error('receipts: counts query failed', { err: error });
     return res.status(500).json({ error: error.message });
   }
 }
@@ -102,7 +103,7 @@ async function handleGet(req, res) {
       page,
     });
   } catch (error) {
-    console.error('Receipts GET error:', error.message, error.stack);
+    logger.error('receipts: GET failed', { err: error });
     return res.status(500).json({ error: error.message });
   }
 }
@@ -221,7 +222,7 @@ async function handlePatch(req, res) {
 
     return res.status(200).json({ success: true, updated: count || 0 });
   } catch (error) {
-    console.error('Receipts PATCH error:', error.message, error.stack);
+    logger.error('receipts: PATCH failed', { err: error });
     return res.status(500).json({ error: error.message });
   }
 }
@@ -263,7 +264,7 @@ async function handleDelete(req, res) {
         .remove(storagePaths);
 
       if (storageError) {
-        console.error('Storage delete error (continuing):', storageError.message);
+        logger.warn('receipts: storage delete failed (continuing)', { err: storageError });
       }
     }
 
@@ -279,7 +280,7 @@ async function handleDelete(req, res) {
 
     return res.status(200).json({ success: true, deleted: count || 0 });
   } catch (error) {
-    console.error('Receipts DELETE error:', error.message, error.stack);
+    logger.error('receipts: DELETE failed', { err: error });
     return res.status(500).json({ error: error.message });
   }
 }

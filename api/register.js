@@ -11,6 +11,7 @@ import {
   validateSplitsFromDb,
 } from './lib/freee.js';
 import { getSupabase } from './lib/supabase.js';
+import { logger } from './lib/logger.js';
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
@@ -127,7 +128,7 @@ export default async function handler(request, response) {
         .single();
 
       if (receiptSelectError) {
-        console.error('Receipt select error:', receiptSelectError.message);
+        logger.error('register: receipt select failed', { err: receiptSelectError });
       }
       receipt = receiptData;
       if (receipt) {
@@ -138,7 +139,7 @@ export default async function handler(request, response) {
           .download(receipt.storage_path);
 
         if (downloadError) {
-          console.error('Receipt download error:', downloadError.message);
+          logger.error('register: receipt download failed', { err: downloadError });
         }
 
         if (fileData) {
@@ -164,7 +165,7 @@ export default async function handler(request, response) {
       if (validateSplitsFromDb(dbSplits, amount)) {
         effectiveSplits = dbSplits;
       } else {
-        console.warn('result_json.splits validation failed, falling back to single mode.');
+        logger.warn('register: splits validation failed, falling back to single mode');
       }
     }
 
@@ -220,7 +221,7 @@ export default async function handler(request, response) {
       return response.status(dealResult.status || 500).json(body);
     }
   } catch (e) {
-    console.error('register error:', e.message);
+    logger.error('register: handler error', { err: e });
     return response.status(500).json({ error: `freee登録に失敗しました: ${e.message}` });
   }
 }

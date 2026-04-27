@@ -1,4 +1,5 @@
 import { RECEIPT_PROMPT_V35 } from './lib/prompt.js';
+import { logger } from './lib/logger.js';
 export const config = {
   api: {
     bodyParser: false,
@@ -466,7 +467,7 @@ export default async function handler(req, res) {
 
         processed++;
       } catch (err) {
-        console.error(`Process error for ${receipt.id}:`, err.message);
+        logger.error('process: receipt failed', { err, receiptId: receipt.id });
 
         await supabase
           .from('receipts')
@@ -479,7 +480,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ processed, errors });
   } catch (error) {
-    console.error('Process handler error:', error.message, error.stack);
+    logger.error('process: handler error', { err: error });
     return res.status(500).json({ error: error.message });
   }
 }

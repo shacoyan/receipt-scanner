@@ -3,6 +3,7 @@
 // - Supabase クライアントは引数注入 (getSupabase) で受け取り、本ファイルは @supabase/supabase-js を import しない
 
 import { freeeApiFetch } from './freee-auth.js';
+import { logger } from './logger.js';
 
 // ─── 定数 ────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ export async function uploadReceiptToFreee(companyId, receiptData, mimeType, fil
 
   if (!res.ok) {
     const err = await res.text();
-    console.error('freee receipt upload error:', err);
+    logger.error('freee: receipt upload failed', { err });
     return null;
   }
 
@@ -96,7 +97,7 @@ export async function findOrCreatePartner(companyId, store) {
   });
   if (!createRes.ok) {
     const err = await createRes.text();
-    console.error('Partner create failed:', err);
+    logger.error('freee: partner create failed', { err });
     return { partnerId: null, error: '取引先の作成に失敗しました', detail: err };
   }
   const createData = await createRes.json();
@@ -203,10 +204,10 @@ export async function createDealAndMarkReceipt({
           .eq('id', receiptId);
 
         if (updateError) {
-          console.error('freee_sent_at update error:', updateError.message);
+          logger.error('freee: freee_sent_at update failed', { err: updateError });
         }
       } catch (e) {
-        console.error('freee_sent_at update exception:', e.message);
+        logger.error('freee: freee_sent_at update exception', { err: e });
       }
     }
 
@@ -217,7 +218,7 @@ export async function createDealAndMarkReceipt({
     };
   } else {
     const err = await res.text();
-    console.error('freee API error:', err);
+    logger.error('freee: API error', { err });
     return { ok: false, status: 500, error: '取引の登録に失敗しました', detail: err };
   }
 }
