@@ -135,8 +135,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const { getSupabase } = await import('./lib/supabase.js');
+    const supabase = await getSupabase();
 
     // Fetch up to 10 pending receipts (oldest first)
     const { data: pendingReceipts, error: fetchError } = await supabase

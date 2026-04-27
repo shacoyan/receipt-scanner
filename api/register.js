@@ -10,11 +10,7 @@ import {
   resolveSectionId,
   validateSplitsFromDb,
 } from './lib/freee.js';
-
-async function getSupabase() {
-  const { createClient } = await import('@supabase/supabase-js');
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-}
+import { getSupabase } from './lib/supabase.js';
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') {

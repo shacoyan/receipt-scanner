@@ -1,3 +1,5 @@
+import { getSupabase } from './lib/supabase.js';
+
 const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
 const ALLOWED_TAX_CODES = [136, 137];
 const MAX_DESCRIPTION_LENGTH = 200;
@@ -13,11 +15,6 @@ export default async function handler(req, res) {
     return handleDelete(req, res);
   }
   return res.status(405).json({ error: 'Method not allowed' });
-}
-
-async function getSupabase() {
-  const { createClient } = await import('@supabase/supabase-js');
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
 async function handleGetCounts(_req, res) {
