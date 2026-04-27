@@ -20,8 +20,41 @@ async function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function handleGetCounts(_req, res) {
+  try {
+    const supabase = await getSupabase();
+    const base = () => supabase.from('receipts').select('*', { count: 'exact', head: true });
+
+    const [all, analyzing, done, approvedUnsent, sent, errorCnt] = await Promise.all([
+      base(),
+      base().in('status', ['pending', 'processing']),
+      base().in('status', ['done']),
+      base().in('status', ['approved']).is('freee_sent_at', null),
+      base().in('status', ['approved']).not('freee_sent_at', 'is', null),
+      base().in('status', ['error']),
+    ]);
+
+    return res.status(200).json({
+      all: all.count || 0,
+      analyzing: analyzing.count || 0,
+      done: done.count || 0,
+      approved: approvedUnsent.count || 0,
+      sent: sent.count || 0,
+      error: errorCnt.count || 0,
+    });
+  } catch (error) {
+    console.error('Receipts counts error:', error.message, error.stack);
+    return res.status(500).json({ error: error.message });
+  }
+}
+
 async function handleGet(req, res) {
   try {
+    // ─── タブカウント取得モード（N+1 解消） ─────────────────────
+    if (req.query && req.query.counts === '1') {
+      return handleGetCounts(req, res);
+    }
+
     const supabase = await getSupabase();
     const { status, sent, page: pageStr, limit: limitStr } = req.query || {};
     const page = Math.max(1, parseInt(pageStr, 10) || 1);
