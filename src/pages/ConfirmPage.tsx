@@ -1,22 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-
-interface AnalysisResult {
-  date: string | null;
-  amount: number | null;
-  store: string | null;
-  category: string | null;
-  memo: string | null;
-  tax_code?: number | null;
-  splits?: SplitItem[] | null;
-}
-
-interface SplitItem {
-  category: string;
-  amount: number;
-  tax_code: 136 | 137;
-  description: string;
-}
+import type { AnalysisResult, SplitItem } from '../types/receipt';
 
 interface FormState {
   date: string;

@@ -1,29 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ApproveCard from '../components/ApproveCard';
-
-type ReceiptStatus = 'pending' | 'processing' | 'done' | 'approved' | 'error';
-interface ReceiptResult {
-  date: string;
-  amount: number;
-  store: string;
-  category: string;
-  tax_code?: number | null;
-  splits?: Array<{ category: string; amount: number; tax_code: number; description?: string; }> | null;
-  uncertainty_reason?: string | null;
-}
-interface Receipt {
-  id: string;
-  image_url: string;
-  status: ReceiptStatus;
-  result_json: ReceiptResult | null;
-  error_message: string | null;
-  section_id: string | null;
-  created_at: string;
-  freee_sent_at: string | null;
-  freee_deal_id: string | null;
-}
-interface ReceiptsResponse { data: Receipt[]; total: number; page: number; }
+import type { Receipt, ReceiptStatus, ReceiptResult, ReceiptsResponse } from '../types/receipt';
 
 const ApprovePage: React.FC = () => {
   const navigate = useNavigate();

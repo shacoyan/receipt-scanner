@@ -1,11 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-
-interface SplitItem {
-  category: string;
-  amount: number;
-  tax_code: 136 | 137;
-  description?: string;
-}
+import type { SplitItem } from '../types/receipt';
 
 interface SplitEditModalProps {
   receipt: {

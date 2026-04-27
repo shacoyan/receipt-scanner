@@ -1,41 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SplitEditModal from '../components/SplitEditModal';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-type ReceiptStatus = 'pending' | 'processing' | 'done' | 'approved' | 'error';
-
-interface ReceiptResult {
-  date: string;
-  amount: number;
-  store: string;
-  category: string;
-  tax_code?: number | null;
-  splits?: Array<{
-    category: string;
-    amount: number;
-    tax_code: number;
-    description?: string;
-  }> | null;
-}
-
-interface Receipt {
-  id: string;
-  image_url: string;
-  status: ReceiptStatus;
-  result_json: ReceiptResult | null;
-  error_message: string | null;
-  section_id: string | null;
-  created_at: string;
-  freee_sent_at: string | null;
-  freee_deal_id: string | null;
-}
-
-interface ReceiptsResponse {
-  data: Receipt[];
-  total: number;
-  page: number;
-}
+import type { Receipt, ReceiptStatus, ReceiptResult, ReceiptsResponse } from '../types/receipt';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
