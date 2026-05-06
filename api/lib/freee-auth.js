@@ -1,30 +1,71 @@
 // freee認証ヘルパー
 // - トークン自動リフレッシュ付きAPI呼び出し
 
-import { readFileSync, writeFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { getSupabase } from './supabase.js';
 
 const TOKEN_URL = 'https://accounts.secure.freee.co.jp/public_api/token';
 
-function getEnvPath() {
-  // api/lib/freee-auth.js → receipt-scanner/.env
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  return resolve(__dirname, '../../.env');
+async function loadTokensFromDb() {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase
+    .from('freee_oauth_tokens')
+    .select('access_token, refresh_token, expires_at')
+    .eq('id', 1)
+    .single();
+
+  if (error || !data) {
+    throw new Error('freee_oauth_tokens row missing — run scripts/seed-freee-tokens.mjs first');
+  }
+
+  return data;
 }
 
-export function getAccessToken() {
-  return process.env.FREEE_ACCESS_TOKEN || '';
+async function saveTokensToDb({ access_token, refresh_token, expires_at }) {
+  const supabase = await getSupabase();
+  const { error } = await supabase
+    .from('freee_oauth_tokens')
+    .update({ access_token, refresh_token, expires_at })
+    .eq('id', 1);
+
+  if (error) {
+    throw new Error(`freee_oauth_tokens update failed: ${error.message}`);
+  }
+}
+
+export async function getAccessToken() {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase
+    .from('freee_oauth_tokens')
+    .select('access_token, expires_at')
+    .eq('id', 1)
+    .single();
+
+  if (error || !data) {
+    throw new Error('freee_oauth_tokens row missing — run scripts/seed-freee-tokens.mjs first');
+  }
+
+  const expiresAt = new Date(data.expires_at).getTime();
+  if (expiresAt - Date.now() < 300 * 1000) {
+    return refreshTokenOnce();
+  }
+
+  return data.access_token;
 }
 
 export async function refreshToken() {
   const clientId = process.env.FREEE_CLIENT_ID;
   const clientSecret = process.env.FREEE_CLIENT_SECRET;
-  const currentRefreshToken = process.env.FREEE_REFRESH_TOKEN;
 
-  if (!clientId || !clientSecret || !currentRefreshToken) {
-    throw new Error('FREEE_CLIENT_ID, FREEE_CLIENT_SECRET, FREEE_REFRESH_TOKEN が必要です');
+  if (!clientId || !clientSecret) {
+    throw new Error('FREEE_CLIENT_ID, FREEE_CLIENT_SECRET が必要です');
+  }
+
+  const currentTokens = await loadTokensFromDb();
+  const currentRefreshToken = currentTokens.refresh_token;
+
+  if (!currentRefreshToken) {
+    throw new Error('freee_oauth_tokens row missing refresh_token');
   }
 
   const res = await fetch(TOKEN_URL, {
@@ -49,27 +90,23 @@ export async function refreshToken() {
     throw new Error(`トークンリフレッシュ失敗: ${JSON.stringify(data)}`);
   }
 
-  // process.env を更新
-  process.env.FREEE_ACCESS_TOKEN = data.access_token;
-  if (data.refresh_token) {
-    process.env.FREEE_REFRESH_TOKEN = data.refresh_token;
-  }
+  const newAccessToken = data.access_token;
+  const newRefreshToken = data.refresh_token || currentRefreshToken;
+  const expiresAt = new Date(Date.now() + (data.expires_in ?? 21600) * 1000).toISOString();
 
-  // .env ファイルを更新
-  try {
-    const envPath = getEnvPath();
-    let env = readFileSync(envPath, 'utf-8');
-    env = env.replace(/FREEE_ACCESS_TOKEN=.*/, `FREEE_ACCESS_TOKEN=${data.access_token}`);
-    if (data.refresh_token) {
-      env = env.replace(/FREEE_REFRESH_TOKEN=.*/, `FREEE_REFRESH_TOKEN=${data.refresh_token}`);
-    }
-    writeFileSync(envPath, env);
-    logger.info('freee: token refreshed');
-  } catch (e) {
-    logger.warn('freee: .env update failed (process.env updated)', { err: e });
-  }
+  await saveTokensToDb({
+    access_token: newAccessToken,
+    refresh_token: newRefreshToken,
+    expires_at: expiresAt,
+  });
 
-  return data.access_token;
+  const tail4 = (t) => t.slice(-4);
+  logger.info('freee: token refreshed', {
+    access_token: tail4(newAccessToken),
+    refresh_token: tail4(newRefreshToken),
+  });
+
+  return newAccessToken;
 }
 
 // トークンリフレッシュの重複実行を防ぐ
@@ -86,8 +123,9 @@ async function refreshTokenOnce() {
 }
 
 export async function freeeApiFetch(url, options = {}) {
+  const token = await getAccessToken();
   const headers = { ...options.headers };
-  headers['Authorization'] = `Bearer ${getAccessToken()}`;
+  headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(url, { ...options, headers });
 

@@ -3,6 +3,7 @@ dist
 .env
 .vercel
 .env*.local
+.env.bak.*
 
 # freee API response containing sensitive IDs (account_item ID, tenant_id, etc.)
 scripts/output/
