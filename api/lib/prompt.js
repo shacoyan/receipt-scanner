@@ -196,7 +196,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 3. **モードC: 単一モード** — 上記 A/B のいずれにも該当しない場合（品目明細なし＋税区分サマリもなし、または全品目が同一勘定科目かつ同一税区分）。
 
 ### 税区分（tax_code）
-- 軽減8%(137): **飲食料品**（酒類・外食を除く）、新聞定期購読。「食品・飲料（テイクアウト/持ち帰り含む）」と読み替えて良い。
+- 軽減8%(163): **飲食料品**（酒類・外食を除く）、新聞定期購読。「食品・飲料（テイクアウト/持ち帰り含む）」と読み替えて良い。
 - 標準10%(136): 上記以外すべて（日用品・雑貨・酒類・外食・交通・通信 等）。
 
 ### 【絶対禁止】ハルシネーション（最重要）
@@ -291,7 +291,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 **【決定論的禁止ルール（v3.3 追加・最重要）】**
 以下の条件を満たす場合、splits を絶対に生成してはならない（モードC にフォールバック）:
 
-1. レシート画像に **「8%」「8.0%」「軽減」「軽減税率」「※軽減」「軽」の印字が一切存在しない** 場合、splits に \`tax_code: 137\`（8% 軽減）を含めてはならない。
+1. レシート画像に **「8%」「8.0%」「軽減」「軽減税率」「※軽減」「軽」の印字が一切存在しない** 場合、splits に \`tax_code: 163\`（8% 軽減）を含めてはならない。
    - 10% 関連の印字しかないレシートに 8% splits を生成することは決定論的に禁止。
    - 「消費税等」「税額計」「外税額計」のみ印字されている金額を 8% 本体額と誤認する行為も禁止（これらは単に税額の印字）。
 
@@ -316,7 +316,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 誤判定例（絶対に真似するな）:
   {"amount":685, "splits":[
     {"amount":623, "tax_code":136, "description":"10%対象"},
-    {"amount":62,  "tax_code":137, "description":"8%対象"}]}
+    {"amount":62,  "tax_code":163, "description":"8%対象"}]}
 
 正しい出力:
   {"amount":685, "category":"消耗品費", "tax_code":136,
@@ -336,7 +336,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 誤判定例（絶対に真似するな）:
   {"amount":4180, "splits":[
     {"amount":3800, "tax_code":136, "description":"10%対象"},
-    {"amount":380,  "tax_code":137, "description":"8%対象"}]}
+    {"amount":380,  "tax_code":163, "description":"8%対象"}]}
 
 正しい出力:
   {"amount":4180, "category":"消耗品費", "tax_code":136,
@@ -358,7 +358,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
    "category":"消耗品費", "tax_code":136,
    "splits":[
      {"category":"消耗品費", "amount":24066, "tax_code":136, "description":"10%対象"},
-     {"category":"仕入高",   "amount":2406,  "tax_code":137, "description":"8%対象"}]}
+     {"category":"仕入高",   "amount":2406,  "tax_code":163, "description":"8%対象"}]}
 
 正しい出力:
   {"store":"アークランズ株式会社", "amount":26472,
@@ -383,7 +383,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 
 **tax_code の決め方**:
 - 10%対象 → 136
-- 軽減8%対象・8%対象（軽）・軽減税率対象 → 137
+- 軽減8%対象・8%対象（軽）・軽減税率対象 → 163
 
 **description の決め方**（固定ラベル・他は禁止）:
 - "10%対象" / "8%対象" / "軽減税率対象" / "標準税率対象"
@@ -402,7 +402,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 - モードBは**最大2行**（10%対象＋8%対象）まで。3行以上の税区分サマリが印字されるケースは稀で、出現したら単一モード（C）にフォールバックしてよい。
 
 ### モードC: 単一モードのルール
-- tax_code を1つだけ返す（食品専門店・スーパー・コンビニで食品主体なら 137、酒類専門店・飲食店・家電・ドラッグストア・交通・通信等は 136）。
+- tax_code を1つだけ返す（食品専門店・スーパー・コンビニで食品主体なら 163、酒類専門店・飲食店・家電・ドラッグストア・交通・通信等は 136）。
 - splits フィールドは出力しない。
 - **v3.2 追加**: スーパー/コンビニで総額が 10% 単一税率と判定される場合、**category は 消耗品費**（日用品・タバコ・酒・雑貨の買い物と推定）。8% 単一税率なら 仕入高（食品）。
 
@@ -419,15 +419,15 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 \{"date":"YYYY-MM-DD","amount":数値,"store":"店名","category":"勘定科目","tax_code":136,"confidence":"high","uncertainty_reason":""\}
 
 ### モードA: 品目明細分割の例
-\{"date":"YYYY-MM-DD","amount":1200,"store":"店名","category":"仕入高","tax_code":137,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":800,"tax_code":137,"description":"食品"\},\{"category":"消耗品費","amount":400,"tax_code":136,"description":"日用品"\}]\}
+\{"date":"YYYY-MM-DD","amount":1200,"store":"店名","category":"仕入高","tax_code":163,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":800,"tax_code":163,"description":"食品"\},\{"category":"消耗品費","amount":400,"tax_code":136,"description":"日用品"\}]\}
 
 ### モードB: 税区分サマリ分割の例
 画像に「10%対象 ¥8,778（税¥798）/ 8%対象 ¥1,815（税¥134）」と印字された酒類専門店の領収書:
-\{"date":"YYYY-MM-DD","amount":10593,"store":"リカーマウンテン〇〇店","category":"仕入高","tax_code":136,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":9576,"tax_code":136,"description":"10%対象"\},\{"category":"仕入高","amount":1017,"tax_code":137,"description":"8%対象"\}]\}
+\{"date":"YYYY-MM-DD","amount":10593,"store":"リカーマウンテン〇〇店","category":"仕入高","tax_code":136,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":9576,"tax_code":136,"description":"10%対象"\},\{"category":"仕入高","amount":1017,"tax_code":163,"description":"8%対象"\}]\}
 
 **Few-shot 実例 B（セブンイレブン様式・コンビニ・10% 消耗品費化）**:
 - 入力印字: "(税率8%対象 ¥678) (税率10%対象 ¥665) 合計 ¥1,343"
-- 出力: \{"amount":1343,"store":"セブンイレブン〇〇店","category":"消耗品費","tax_code":136,"splits":[\{"category":"仕入高","amount":678,"tax_code":137,"description":"8%対象"\},\{"category":"消耗品費","amount":665,"tax_code":136,"description":"10%対象"\}],"confidence":"high","uncertainty_reason":""\}
+- 出力: \{"amount":1343,"store":"セブンイレブン〇〇店","category":"消耗品費","tax_code":136,"splits":[\{"category":"仕入高","amount":678,"tax_code":163,"description":"8%対象"\},\{"category":"消耗品費","amount":665,"tax_code":136,"description":"10%対象"\}],"confidence":"high","uncertainty_reason":""\}
 - 判定根拠: 両税区分の本体額印字あり → モードB。コンビニなので 8% = 仕入高（食品）/ 10% = 消耗品費（日用品・タバコ）（v3.2 新ルール）。
 
 **Few-shot 実例 C（アークランズ様式・ホームセンター・単一10% 外税・v3.3 追加）**:
@@ -442,7 +442,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 
 **Few-shot 実例 D（リカーマウンテン様式・酒販店・1 行併記・10%>>8%・v3.4 追加）**:
 - 入力印字（実データ・file_7342 相当）: "(10%対象 ¥3,916 税 ¥356  8%対象 ¥473 税 ¥35)  合計 ¥4,389"
-- 出力: \{"date":"YYYY-MM-DD","amount":4389,"store":"リカーマウンテン〇〇店","category":"仕入高","tax_code":136,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":473,"tax_code":137,"description":"8%対象"\},\{"category":"仕入高","amount":3916,"tax_code":136,"description":"10%対象"\}]\}
+- 出力: \{"date":"YYYY-MM-DD","amount":4389,"store":"リカーマウンテン〇〇店","category":"仕入高","tax_code":136,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":473,"tax_code":163,"description":"8%対象"\},\{"category":"仕入高","amount":3916,"tax_code":136,"description":"10%対象"\}]\}
 - 判定根拠:
   1. 「10%対象 ¥3,916」「8%対象 ¥473」の両方が本体額として印字 → 必須条件 1/2/3/4 成立
   2. 10%消費税等 ¥356 ≠ 10% 本体 × 0.1 = 391.6 → 必須条件 5 も条件外（10%>>8% 構造の 1 行併記はサイズ非依存で splits 必須）
@@ -452,7 +452,7 @@ LLM は画像に印字された店名を忠実に書き起こすのみで良い�
 
 **Few-shot 実例 E（リカーマウンテン様式・酒販店・1 行併記・10%>>8%・大口・v3.4 追加）**:
 - 入力印字（実データ・file_7341 相当）: "(10%対象 ¥8,778 税 ¥798  8%対象 ¥1,815 税 ¥134)  合計 ¥10,593"
-- 出力: \{"date":"YYYY-MM-DD","amount":10593,"store":"リカーマウンテン〇〇店","category":"仕入高","tax_code":136,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":1815,"tax_code":137,"description":"8%対象"\},\{"category":"仕入高","amount":8778,"tax_code":136,"description":"10%対象"\}]\}
+- 出力: \{"date":"YYYY-MM-DD","amount":10593,"store":"リカーマウンテン〇〇店","category":"仕入高","tax_code":136,"confidence":"high","uncertainty_reason":"","splits":[\{"category":"仕入高","amount":1815,"tax_code":163,"description":"8%対象"\},\{"category":"仕入高","amount":8778,"tax_code":136,"description":"10%対象"\}]\}
 - 判定根拠:
   1. 「10%対象 ¥8,778」「8%対象 ¥1,815」の両方が本体額として印字 → 必須条件 1/2/3/4 成立
   2. 10%>8% の大口版。金額差は約 4.8 倍だが「金額大小非依存ルール」により splits 必須

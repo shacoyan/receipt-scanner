@@ -245,7 +245,7 @@ export default async function handler(req, res) {
               category: typeof s.category === 'string' ? s.category : null,
               amount: typeof s.amount === 'number' ? s.amount
                      : (s.amount ? parseInt(s.amount, 10) : null),
-              tax_code: (s.tax_code === 136 || s.tax_code === 137) ? s.tax_code : 136,
+              tax_code: (s.tax_code === 136 || s.tax_code === 163) ? s.tax_code : 136,
               description: typeof s.description === 'string' ? s.description : '',
             }))
             .filter((s) => s.category && typeof s.amount === 'number' && s.amount > 0);
@@ -270,7 +270,7 @@ export default async function handler(req, res) {
           amount: typeof parsed.amount === 'number' ? parsed.amount : (parsed.amount ? (Number.isNaN(parseInt(parsed.amount, 10)) ? null : parseInt(parsed.amount, 10)) : null),
           store: normalizeStoreName(parsed.store) || null,
           category: parsed.category || null,
-          tax_code: (parsed.tax_code === 136 || parsed.tax_code === 137) ? parsed.tax_code : 136,
+          tax_code: (parsed.tax_code === 136 || parsed.tax_code === 163) ? parsed.tax_code : 136,
           confidence: (parsed.confidence === 'high' || parsed.confidence === 'medium' || parsed.confidence === 'low') ? parsed.confidence : null,
           uncertainty_reason: typeof parsed.uncertainty_reason === 'string' ? parsed.uncertainty_reason : null,
         };
@@ -360,9 +360,9 @@ export default async function handler(req, res) {
           //    誤認している疑いが濃厚（アークランズ ¥26,472 型）。
           //    このパターンは単一10% 税率レシートなのでエラーに倒す。
           if (resultJson.splits.length >= 2) {
-            // 全 136/137 ペアで疑い検査（複数 split 構成でも漏れなく）
+            // 全 136/163 ペアで疑い検査（複数 split 構成でも漏れなく）
             const splits136 = resultJson.splits.filter(s => s.tax_code === 136);
-            const splits137 = resultJson.splits.filter(s => s.tax_code === 137);
+            const splits137 = resultJson.splits.filter(s => s.tax_code === 163);
             let suspectFound = null;
             for (const s10 of splits136) {
               for (const s8 of splits137) {

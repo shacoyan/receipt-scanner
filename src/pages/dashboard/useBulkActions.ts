@@ -122,19 +122,40 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
 
   const saveEdit = useCallback(async () => {
     if (!editingId || !editDraft) return;
+    if (!editDraft.date || !/^\d{4}-\d{2}-\d{2}$/.test(editDraft.date)) {
+      alert('日付の形式が正しくありません (YYYY-MM-DD)');
+      return;
+    }
+    if (!editDraft.store || !editDraft.store.trim()) {
+      alert('店舗名を入力してください');
+      return;
+    }
+    if (!editDraft.amount || !Number.isFinite(editDraft.amount) || editDraft.amount <= 0) {
+      alert('金額は正の整数で入力してください');
+      return;
+    }
+    if (!editDraft.category || !editDraft.category.trim()) {
+      alert('勘定科目を選択してください');
+      return;
+    }
     try {
       const res = await fetch('/api/receipts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [editingId], action: 'update', data: editDraft, section_id: editSectionId }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({} as { error?: string; detail?: string }));
+        const msg = body.error || `HTTP ${res.status}`;
+        throw new Error(body.detail ? `${msg} (${body.detail})` : msg);
+      }
       await onMutate();
       setEditingId(null);
       setEditDraft(null);
       setEditSectionId(null);
-    } catch {
-      alert('保存に失敗しました');
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      alert(`保存に失敗しました: ${detail}`);
     }
   }, [editingId, editDraft, editSectionId, onMutate]);
 
@@ -237,7 +258,9 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
         } else {
           ng++;
           const err = await res.json().catch(() => ({}));
-          failMsgs.push(`${r.result_json?.store || '不明'}: ${(err as { error?: string }).error || '送信失敗'}`);
+          const errObj = err as { error?: string; detail?: string };
+          const errMsg = errObj.error || `送信失敗 (HTTP ${res.status})`;
+          failMsgs.push(`${r.result_json?.store || '不明'}: ${errObj.detail ? errMsg + ' / ' + errObj.detail.slice(0, 100) : errMsg}`);
         }
       } catch {
         ng++;

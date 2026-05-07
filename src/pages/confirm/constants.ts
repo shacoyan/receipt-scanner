@@ -10,5 +10,5 @@ export const CATEGORIES = [
 
 export const TAX_OPTIONS = [
   { value: 136, label: '10% 標準' },
-  { value: 137, label: '8% 軽減（食品）' },
+  { value: 163, label: '8% 軽減（食品）' },
 ] as const;

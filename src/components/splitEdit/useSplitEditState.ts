@@ -36,9 +36,17 @@ export function useSplitEditState(
   const [date, setDate] = useState(receipt.result_json?.date ?? '');
   const [store, setStore] = useState(receipt.result_json?.store ?? '');
   const [sectionId, setSectionId] = useState<string>(receipt.section_id ?? '');
-  const [splits, setSplits] = useState<SplitItem[]>(
-    (receipt.result_json?.splits as SplitItem[] | undefined) ?? []
-  );
+  const [splits, setSplits] = useState<SplitItem[]>(() => {
+    const existing = receipt.result_json?.splits as SplitItem[] | undefined;
+    if (Array.isArray(existing) && existing.length >= 2) return existing;
+    // 単一→分割初期化: 空 2 行を投入 (合計は totalAmount と一致しないので canSave=false のまま、
+    // ユーザーが入力する)。デフォルト税コードは 136 (10% 標準)。
+    const defaultCategory = categories[0] ?? '';
+    return [
+      { category: defaultCategory, amount: 0, tax_code: 136, description: '' },
+      { category: defaultCategory, amount: 0, tax_code: 136, description: '' },
+    ];
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalAmount, setTotalAmount] = useState(receipt.result_json?.amount ?? 0);
@@ -57,7 +65,7 @@ export function useSplitEditState(
     return splits.every((s) => {
       if (!categories.includes(s.category)) return false;
       if (!Number.isInteger(s.amount) || s.amount <= 0) return false;
-      if (s.tax_code !== 136 && s.tax_code !== 137) return false;
+      if (s.tax_code !== 136 && s.tax_code !== 163) return false;
       if (s.description !== undefined && s.description.length > 200) return false;
       return true;
     });

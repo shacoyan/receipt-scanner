@@ -54,13 +54,13 @@ export interface ReceiptsResponse {
 
 /**
  * UI 確定後の split 1 行（ConfirmPage / SplitEditModal で使用）。
- * tax_code は確定値 136 (10%) または 137 (8%)。
+ * tax_code は確定値 136 (課対仕入10%) または 163 (課対仕入8%軽減)。
  * description は optional（既存 SplitEditModal 互換）。
  */
 export interface SplitItem {
   category: string;
   amount: number;
-  tax_code: 136 | 137;
+  tax_code: 136 | 163;
   description?: string;
 }
 

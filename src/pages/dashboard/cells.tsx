@@ -19,8 +19,8 @@ export const StatusBadge: React.FC<{ status: Receipt['status'] }> = ({ status })
 // ─── TaxBadge ─────────────────────────────────────────────────────────────
 export const TaxBadge: React.FC<{ taxCode?: number | null }> = ({ taxCode }) => {
   if (taxCode == null) return null;
-  // 137 = 8%軽減 (8軽)、136 = 10%標準
-  const label = taxCode === 137 ? '8%軽減' : '10%';
+  // 163 = 課対仕入8%軽減 (8軽)、136 = 課対仕入10%標準
+  const label = taxCode === 163 ? '8%軽減' : '10%';
   return <span className="ml-1 text-xs text-gray-400">{label}</span>;
 };
 

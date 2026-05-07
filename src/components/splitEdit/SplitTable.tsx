@@ -67,13 +67,13 @@ const SplitTable: React.FC<SplitTableProps> = ({
                     value={s.tax_code}
                     onChange={(e) =>
                       onUpdateSplit(i, {
-                        tax_code: Number(e.target.value) as 136 | 137,
+                        tax_code: Number(e.target.value) as 136 | 163,
                       })
                     }
                     className="border border-gray-300 rounded-md px-2 py-1 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
                   >
                     <option value={136}>10%</option>
-                    <option value={137}>8%軽減</option>
+                    <option value={163}>8%軽減</option>
                   </select>
                 </td>
                 <td className="px-2 py-2">

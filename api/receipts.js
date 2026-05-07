@@ -27,7 +27,7 @@ async function getCachedSignedUrl(supabase, storagePath) {
 }
 
 const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
-const ALLOWED_TAX_CODES = [136, 137];
+const ALLOWED_TAX_CODES = [136, 163];
 const MAX_DESCRIPTION_LENGTH = 200;
 
 export default async function handler(req, res) {

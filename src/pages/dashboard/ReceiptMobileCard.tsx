@@ -84,12 +84,23 @@ const ReceiptMobileCardImpl: React.FC<ReceiptMobileCardProps> = ({
         </div>
         <div className="flex items-center gap-2">
           {canEdit && !isEditing && (
-            <button
-              onClick={(e) => { e.stopPropagation(); isSplit ? openSplitModal(r) : startEdit(r); }}
-              className="text-indigo-600 text-xs font-medium"
-            >
-              編集
-            </button>
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); isSplit ? openSplitModal(r) : startEdit(r); }}
+                className="text-indigo-600 text-xs font-medium"
+              >
+                編集
+              </button>
+              {!isSplit && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); openSplitModal(r); }}
+                  className="text-purple-600 text-xs font-medium"
+                  title="このレシートを複数カテゴリに分割"
+                >
+                  分割
+                </button>
+              )}
+            </>
           )}
           {isEditing && (
             <>
@@ -261,7 +272,7 @@ const ReceiptMobileCardImpl: React.FC<ReceiptMobileCardProps> = ({
             {r.result_json!.splits!.map((s, i) => (
               <div key={i} className="flex items-center justify-between text-sm">
                 <div className="flex-1 min-w-0">
-                  <div className="truncate">{s.category} <span className="text-xs text-gray-400">{s.tax_code === 137 ? '8軽' : '10%'}</span></div>
+                  <div className="truncate">{s.category} <span className="text-xs text-gray-400">{s.tax_code === 163 ? '8軽' : '10%'}</span></div>
                   {s.description && <div className="text-xs text-gray-500 truncate">{s.description}</div>}
                 </div>
                 <div className="tabular-nums text-right ml-2">¥{s.amount.toLocaleString()}</div>

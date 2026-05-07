@@ -34,7 +34,7 @@ export default async function handler(request, response) {
       if (typeof split.amount !== 'number' || split.amount <= 0) {
         return response.status(400).json({ error: '分割項目の金額が不正です' });
       }
-      if (split.tax_code !== 136 && split.tax_code !== 137) {
+      if (split.tax_code !== 136 && split.tax_code !== 163) {
         return response.status(400).json({ error: '分割項目の税コードが不正です' });
       }
       splitsAmountSum += split.amount;
@@ -144,14 +144,18 @@ export default async function handler(request, response) {
 
         if (fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());
-          freeeReceiptId = await uploadReceiptToFreee(
+          const upload = await uploadReceiptToFreee(
             companyId,
             buffer,
             receipt.mime_type || 'image/jpeg',
             receipt.original_filename || 'receipt.jpg'
           );
+          freeeReceiptId = upload.receiptId;
           if (!freeeReceiptId) {
-            return response.status(500).json({ error: 'レシート画像のfreeeアップロードに失敗しました' });
+            return response.status(500).json({
+              error: upload.error || 'レシート画像のfreeeアップロードに失敗しました',
+              detail: upload.detail,
+            });
           }
         }
       }
@@ -172,7 +176,7 @@ export default async function handler(request, response) {
     const effectiveTaxCode = tax_code ?? result_json?.tax_code ?? TAX_CODE;
 
     // 単一モード時の tax_code フォールバック
-    const singleTaxCode = (effectiveTaxCode === 136 || effectiveTaxCode === 137) ? effectiveTaxCode : TAX_CODE;
+    const singleTaxCode = (effectiveTaxCode === 136 || effectiveTaxCode === 163) ? effectiveTaxCode : TAX_CODE;
 
     // 2. 取引先（partner）を検索 or 新規作成
     const partnerResult = await findOrCreatePartner(companyId, store);

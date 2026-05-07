@@ -168,12 +168,23 @@ const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
         {/* Actions (edit) */}
         <td className="px-3 py-3 text-sm">
           {canEdit && r.result_json && !isEditing && (
-            <button
-              onClick={(e) => { e.stopPropagation(); isSplit ? openSplitModal(r) : startEdit(r); }}
-              className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
-            >
-              編集
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); isSplit ? openSplitModal(r) : startEdit(r); }}
+                className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+              >
+                編集
+              </button>
+              {!isSplit && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); openSplitModal(r); }}
+                  className="text-purple-600 hover:text-purple-800 text-xs font-medium"
+                  title="このレシートを複数カテゴリに分割"
+                >
+                  分割
+                </button>
+              )}
+            </div>
           )}
           {isEditing && (
             <div className="flex gap-1">
@@ -223,7 +234,7 @@ const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
                   <tr key={i} className="border-t border-indigo-100">
                     <td className="py-1">{s.category}</td>
                     <td className="py-1 text-right tabular-nums">¥{s.amount.toLocaleString()}</td>
-                    <td className="py-1">{s.tax_code === 137 ? '8軽' : '10%'}</td>
+                    <td className="py-1">{s.tax_code === 163 ? '8軽' : '10%'}</td>
                     <td className="py-1 text-gray-600">{s.description || ''}</td>
                   </tr>
                 ))}

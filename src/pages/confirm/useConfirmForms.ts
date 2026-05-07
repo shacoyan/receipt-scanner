@@ -8,7 +8,7 @@ export interface FormState {
   store: string;
   category: string;
   memo: string;
-  tax_code: 136 | 137;
+  tax_code: 136 | 163;
   splitMode: boolean;
   splits: SplitItem[];
 }
@@ -64,7 +64,7 @@ export function useConfirmForms(analyses: AnalysisResult[] | undefined) {
             store: a.store ?? '',
             category: a.category ?? '雑費',
             memo: a.memo ?? '',
-            tax_code: a.tax_code === 137 ? 137 : 136,
+            tax_code: a.tax_code === 163 ? 163 : 136,
             splitMode: initialSplits.length > 0,
             splits: initialSplits,
           };

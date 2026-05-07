@@ -42,7 +42,7 @@ export function validateSplitsFromDb(arr, amount) {
   for (const split of arr) {
     if (typeof split.category !== 'string' || !CATEGORY_MAP[split.category]) return false;
     if (typeof split.amount !== 'number' || split.amount <= 0) return false;
-    if (split.tax_code !== 136 && split.tax_code !== 137) return false;
+    if (split.tax_code !== 136 && split.tax_code !== 163) return false;
     sum += split.amount;
   }
   if (sum !== amount) return false;
@@ -62,13 +62,13 @@ export async function uploadReceiptToFreee(companyId, receiptData, mimeType, fil
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    logger.error('freee: receipt upload failed', { err });
-    return null;
+    const detail = await res.text();
+    logger.error('freee: receipt upload failed', { detail });
+    return { receiptId: null, error: 'レシート画像のfreeeアップロードに失敗しました', detail };
   }
 
   const data = await res.json();
-  return data.receipt?.id || null;
+  return { receiptId: data.receipt?.id || null };
 }
 
 /**
@@ -119,7 +119,7 @@ export function buildDetail(item, store) {
     account_item_id: CATEGORY_MAP[item.category] ?? DEFAULT_ACCOUNT_ITEM_ID,
     amount: item.amount,
     description: item.description || store || '',
-    tax_code: (item.tax_code === 136 || item.tax_code === 137) ? item.tax_code : 136,
+    tax_code: (item.tax_code === 136 || item.tax_code === 163) ? item.tax_code : 136,
   };
 }
 
