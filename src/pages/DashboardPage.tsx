@@ -89,8 +89,12 @@ const DashboardPage: React.FC = () => {
   );
 
   const approvedUnsentCount = receipts.filter(
-    (r) => r.status === 'approved' && !r.freee_sent_at,
+    (r) => r.status === 'approved' && r.result_json && !r.freee_sent_at,
   ).length;
+  const approvedUnsentSelectedCount = receipts.filter(
+    (r) => b.selected.has(r.id) && r.status === 'approved' && r.result_json && !r.freee_sent_at,
+  ).length;
+  const hasSelection = b.selected.size > 0;
 
   // ─── Render ───────────────────────────────────────────────────────────
   return (
@@ -182,11 +186,32 @@ const DashboardPage: React.FC = () => {
           </button>
           <div className="flex-1" />
           <button
-            onClick={b.sendToFreee}
-            disabled={b.sending || approvedUnsentCount === 0}
-            className="px-4 py-2 rounded-md text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => {
+              if (!hasSelection && approvedUnsentCount >= 10) {
+                if (!window.confirm(`承認済み未送信 ${approvedUnsentCount} 件を freee に一括送信します。よろしいですか？`)) return;
+              }
+              b.sendToFreee(hasSelection ? b.selected : undefined);
+            }}
+            disabled={
+              b.sending ||
+              (hasSelection ? approvedUnsentSelectedCount === 0 : approvedUnsentCount === 0)
+            }
+            className={[
+              'px-4 py-2 rounded-md text-sm font-medium transition shadow-sm',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+              hasSelection
+                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700',
+            ].join(' ')}
+            title={hasSelection
+              ? `選択 ${b.selected.size} 件のうち送信可能 ${approvedUnsentSelectedCount} 件`
+              : `承認済み未送信 ${approvedUnsentCount} 件を全件送信`}
           >
-            {b.sending ? '送信中...' : '承認済みをfreeeに送信'}
+            {b.sending
+              ? '送信中...'
+              : hasSelection
+                ? `選択した${approvedUnsentSelectedCount}件をfreeeに送信`
+                : `承認済み${approvedUnsentCount}件をfreeeに送信`}
           </button>
         </div>
 

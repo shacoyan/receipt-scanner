@@ -26,7 +26,9 @@ async function getCachedSignedUrl(supabase, storagePath) {
   return data.signedUrl;
 }
 
-const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '接待交際費', '会議費', '通信費', '雑費', '仕入高'];
+const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '交際費', '通信費', '雑費', '仕入高'];
+const CATEGORY_ALIAS = { '接待交際費': '交際費', '会議費': '交際費' };
+const normalizeCategory = (c) => CATEGORY_ALIAS[c] ?? c;
 const ALLOWED_TAX_CODES = [136, 163];
 const MAX_DESCRIPTION_LENGTH = 200;
 
@@ -177,6 +179,17 @@ async function handlePatch(req, res) {
       // Validate amount
       if (typeof data.amount !== 'number' || !Number.isInteger(data.amount) || data.amount <= 0) {
         return res.status(400).json({ error: 'invalid amount' });
+      }
+
+      // Normalize legacy category aliases (接待交際費・会議費 → 交際費)
+      if (data.category !== undefined) {
+        data.category = normalizeCategory(data.category);
+      }
+      if (Array.isArray(data.splits)) {
+        data.splits = data.splits.map(s => {
+          if (!s || typeof s !== 'object' || Array.isArray(s)) return s;
+          return { ...s, category: normalizeCategory(s.category) };
+        });
       }
 
       // Validate category (optional)

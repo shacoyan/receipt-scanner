@@ -31,7 +31,7 @@ export interface UseBulkActionsResult {
 
   // freee
   sending: boolean;
-  sendToFreee: () => Promise<void>;
+  sendToFreee: (targetIds?: ReadonlySet<string>) => Promise<void>;
 
   // Expand
   expandedIds: Set<string>;
@@ -234,12 +234,17 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
   }, [selected, onMutate]);
 
   // ─── Send to freee ────────────────────────────────────────────────────────
-  const sendToFreee = useCallback(async () => {
-    const targets = receipts.filter(
+  const sendToFreee = useCallback(async (targetIds?: ReadonlySet<string>) => {
+    const base = receipts.filter(
       (r) => r.status === 'approved' && r.result_json && !r.freee_sent_at
     );
+    const targets = targetIds && targetIds.size > 0
+      ? base.filter((r) => targetIds.has(r.id))
+      : base;
     if (targets.length === 0) {
-      alert('送信可能な承認済みレシートがありません');
+      alert(targetIds && targetIds.size > 0
+        ? '選択したレシートに送信可能な承認済みかつ未送信のものがありません'
+        : '送信可能な承認済みレシートがありません');
       return;
     }
     setSending(true);
