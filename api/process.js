@@ -56,6 +56,11 @@ const STORE_NORMALIZATION_RULES = [
     pattern: /^(久世福商店)/,
     normalized: '久世福商店',
   },
+  // パラカ系（駐車場運営、OCR で バ/パ・半角/全角括弧・スペース の揺れを統一）
+  {
+    pattern: /^[バパ]ラカ(?:[\s\u3000]*(?:[(（][\s\u3000]*株[\s\u3000]*[)）]|株式会社))?/,
+    normalized: 'パラカ(株)',
+  },
 ];
 
 /**
