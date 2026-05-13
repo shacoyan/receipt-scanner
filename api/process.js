@@ -61,6 +61,12 @@ const STORE_NORMALIZATION_RULES = [
     pattern: /^[バパ]ラカ(?:[\s\u3000]*(?:[(（][\s\u3000]*株[\s\u3000]*[)）]|株式会社))?/,
     normalized: 'パラカ(株)',
   },
+  // apollostation 系（ENEOS apollostation チェーン正規化 / v3.9.2 追加・部分一致, 大小無視・ENEOS より先勝ち / v3.9.4: 'full' 即 return 経路）
+  { name: 'apollostation', pattern: /apollostation/i, normalized: 'apollostation', replaceMode: 'full' },
+  // ENEOS 系（ガソリンスタンドチェーン正規化 / v3.9.2 拡張・部分一致, 大小無視・apollostation matcher 落選後に評価 / v3.9.4: 'full'）
+  { name: 'eneos', pattern: /ENEOS/i, normalized: 'ENEOS', replaceMode: 'full' },
+  // タイムズ24株式会社（駐車場運営会社・施設名より優先 / v3.9.2 拡張・部分一致, 全角/半角 24 揺れ吸収 / v3.9.4: 'full' 即 return → suffix 株式会社二重出力解消, C4 重複整理）
+  { name: 'times24', pattern: /(?:タイムズ|Times)\s*[2２][4４]/i, normalized: 'タイムズ24株式会社', replaceMode: 'full' },
 ];
 
 /**
@@ -111,6 +117,10 @@ function normalizeStoreName(rawStore) {
   for (const rule of STORE_NORMALIZATION_RULES) {
     const m = trimmed.match(rule.pattern);
     if (m) {
+      // v3.9.4: 'full' モード (部分一致系) は即 return。既存 'prefix' モード (前方一致 + slice) の破壊バグ回避
+      if (rule.replaceMode === 'full') {
+        return rule.normalized;
+      }
       const matched = m[0];
       const rawSuffix = trimmed.slice(matched.length);
       const suffix = rawSuffix.trimStart();
@@ -334,6 +344,31 @@ export default async function handler(req, res) {
             .eq('id', receipt.id);
           errors++;
           continue;
+        }
+
+        // v3.9.3 / v3.9.4: high-but-doubting 検出 (denylist 適用)
+        // confidence='high' でも uncertainty_reason に迷いの記述があれば error 化（新規 OCR 経路のみ・遡及なし）
+        // denylist: 「なし」「N/A」等の定型文は迷いなしとみなして done パス通過
+        {
+          const UNCERTAINTY_DENYLIST = new Set([
+            '', 'なし', '特になし', '不明点なし', 'ない', '問題なし',
+            'n/a', 'none', '-', '.', '—', 'なし。', '特になし。',
+          ]);
+          const reasonRaw = (resultJson.uncertainty_reason || '').trim();
+          const reasonNormalized = reasonRaw.toLowerCase();
+          const isDoubting = reasonRaw.length > 0 && !UNCERTAINTY_DENYLIST.has(reasonNormalized);
+          if (isDoubting) {
+            await supabase
+              .from('receipts')
+              .update({
+                status: 'error',
+                result_json: resultJson,
+                error_message: `自信度 high だが迷いの記述あり: ${reasonRaw}`,
+              })
+              .eq('id', receipt.id);
+            errors++;
+            continue;
+          }
         }
 
         // splits 合計整合性チェック（v3.2）
