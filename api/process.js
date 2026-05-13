@@ -353,6 +353,7 @@ export default async function handler(req, res) {
           const UNCERTAINTY_DENYLIST = new Set([
             '', 'なし', '特になし', '不明点なし', 'ない', '問題なし',
             'n/a', 'none', '-', '.', '—', 'なし。', '特になし。',
+            '確認済', '確認済み', '問題なし。', '迷いなし', '迷いなし。', 'ok', 'ok。',
           ]);
           const reasonRaw = (resultJson.uncertainty_reason || '').trim();
           const reasonNormalized = reasonRaw.toLowerCase();
