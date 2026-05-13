@@ -169,6 +169,12 @@ export default async function handler(req, res) {
 
     const prompt = RECEIPT_PROMPT_V35;
 
+    // 現在日付（JST）を YYYY-MM-DD で生成。Claude の「直近12ヶ月」判断基準として注入。
+    // ルール本体（prompt）は cache 対象だが、この日付ブロックは cache 対象外として
+    // 別 text block で渡す。これにより日次の cache 無効化を回避する。
+    const todayJst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateContextText = `\n\n## 現在の日付（参照基準）\n今日は ${todayJst} です。レシート発行日（date）の世紀補正・直近側判定は、この日付を基準として判断してください。\n`;
+
     let processed = 0;
     let errors = 0;
 
@@ -196,6 +202,7 @@ export default async function handler(req, res) {
               role: 'user',
               content: [
                 { type: 'text', text: prompt, cache_control: { type: 'ephemeral' } },
+                { type: 'text', text: dateContextText },
                 {
                   type: 'image',
                   source: { type: 'base64', media_type: mimeType, data: base64Image },
