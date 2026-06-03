@@ -184,6 +184,19 @@ const DashboardPage: React.FC = () => {
           >
             選択した{b.selected.size}件を再判定
           </button>
+          {activeTab === 'error' && (
+            <button
+              onClick={() => navigate('/approve?mode=error')}
+              disabled={tabCounts.error === 0}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition shadow-sm ${
+                tabCounts.error === 0
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              承認モードで確認
+            </button>
+          )}
           <div className="flex-1" />
           <button
             onClick={() => {

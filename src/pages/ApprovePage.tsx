@@ -1,22 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ApproveCard from '../components/ApproveCard';
 import type { Receipt, ReceiptStatus, ReceiptResult, ReceiptsResponse } from '../types/receipt';
+import { CATEGORIES, SECTIONS } from './dashboard/constants';
+
+const SplitEditModal = lazy(() => import('../components/SplitEditModal'));
 
 const ApprovePage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const mode = searchParams.get('mode') === 'error' ? 'error' : 'done';
+
   const [queue, setQueue] = useState<Receipt[]>([]);
   const [index, setIndex] = useState(0);
   const [reachedEnd, setReachedEnd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
 
   const fetchQueue = useCallback(async (pageNum: number): Promise<Receipt[]> => {
-    const res = await fetch(`/api/receipts?status=done&page=${pageNum}&limit=50`);
+    const res = await fetch(`/api/receipts?status=${mode === 'error' ? 'error' : 'done'}&page=${pageNum}&limit=50`);
     if (!res.ok) throw new Error('fetch failed');
     const json: ReceiptsResponse = await res.json();
     return json.data;
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +52,7 @@ const ApprovePage: React.FC = () => {
   const handleApprove = useCallback(() => {
     const receipt = queue[index];
     if (!receipt || processing) return;
+    if (mode === 'error' && !receipt.result_json) return;
     setProcessing(true);
     fetch('/api/receipts', {
       method: 'PATCH',
@@ -62,7 +70,7 @@ const ApprovePage: React.FC = () => {
       alert(err.message || '承認処理に失敗しました');
     })
     .finally(() => setProcessing(false));
-  }, [index, queue, processing, removeFromQueue]);
+  }, [index, queue, processing, removeFromQueue, mode]);
 
   const handleMarkError = useCallback(() => {
     const receipt = queue[index];
@@ -86,6 +94,78 @@ const ApprovePage: React.FC = () => {
     .finally(() => setProcessing(false));
   }, [index, queue, processing, removeFromQueue]);
 
+  const handleRerun = useCallback(() => {
+    const receipt = queue[index];
+    if (!receipt || processing) return;
+    setProcessing(true);
+    fetch('/api/receipts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [receipt.id], action: 'rerun' })
+    })
+    .then(async res => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || 'Rerun failed');
+      }
+      removeFromQueue(receipt.id);
+    })
+    .catch(err => {
+      alert(err.message || '再判定に失敗しました');
+    })
+    .finally(() => setProcessing(false));
+  }, [index, queue, processing, removeFromQueue]);
+
+  const handleDelete = useCallback(() => {
+    const receipt = queue[index];
+    if (!receipt || processing) return;
+    if (!window.confirm('このレシートを削除しますか？')) return;
+    setProcessing(true);
+    fetch('/api/receipts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [receipt.id] })
+    })
+    .then(async res => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || 'Delete failed');
+      }
+      removeFromQueue(receipt.id);
+    })
+    .catch(err => {
+      alert(err.message || '削除処理に失敗しました');
+    })
+    .finally(() => setProcessing(false));
+  }, [index, queue, processing, removeFromQueue]);
+
+  const handleEdit = useCallback(() => {
+    if (processing) return;
+    const receipt = queue[index];
+    if (!receipt) return;
+    setEditingReceipt(receipt);
+  }, [index, queue, processing]);
+
+  const handleEditSaved = useCallback(async () => {
+    const receipt = editingReceipt;
+    if (!receipt) return;
+    try {
+      const res = await fetch('/api/receipts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [receipt.id], action: 'approve' })
+      });
+      if (!res.ok) {
+        throw new Error('承認処理に失敗しました');
+      }
+      removeFromQueue(receipt.id);
+      setEditingReceipt(null);
+    } catch (err) {
+      if (err instanceof Error && err.message === '承認処理に失敗しました') throw err;
+      throw err instanceof Error ? err : new Error('承認処理に失敗しました');
+    }
+  }, [editingReceipt, removeFromQueue]);
+
   const handleSkip = useCallback(() => {
     if (index < queue.length - 1) {
       setIndex(prev => prev + 1);
@@ -107,9 +187,9 @@ const ApprovePage: React.FC = () => {
   // Automatically fetch the next page when index reaches end of queue
   useEffect(() => {
     if (queue.length === 0 && loading) return;
-    
+
     const needsFetch = queue.length === 0 || index >= queue.length;
-    
+
     if (needsFetch && !reachedEnd) {
       let cancelled = false;
       setLoading(true);
@@ -137,19 +217,32 @@ const ApprovePage: React.FC = () => {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (editingReceipt) return;
+      if (processing) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       const key = e.key.toLowerCase();
-      if (key === 'a') { e.preventDefault(); handleApprove(); }
-      else if (key === 'e') { e.preventDefault(); handleMarkError(); }
-      else if (key === 's') { e.preventDefault(); handleSkip(); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); handlePrev(); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); handleNext(); }
+
+      if (mode === 'error') {
+        if (key === 'a') { e.preventDefault(); handleApprove(); }
+        else if (key === 'r') { e.preventDefault(); handleRerun(); }
+        else if (key === 'c') { e.preventDefault(); handleEdit(); }
+        else if (key === 's') { e.preventDefault(); handleSkip(); }
+        else if (key === 'd') { e.preventDefault(); handleDelete(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); handlePrev(); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); handleNext(); }
+      } else {
+        if (key === 'a') { e.preventDefault(); handleApprove(); }
+        else if (key === 'e') { e.preventDefault(); handleMarkError(); }
+        else if (key === 's') { e.preventDefault(); handleSkip(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); handlePrev(); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); handleNext(); }
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleApprove, handleMarkError, handleSkip, handlePrev, handleNext]);
+  }, [mode, handleApprove, handleMarkError, handleRerun, handleDelete, handleEdit, handleSkip, handlePrev, handleNext, editingReceipt, processing]);
 
   if (loading) {
     return (
@@ -169,7 +262,9 @@ const ApprovePage: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-800">承認待ちのレシートがありません</h2>
+            <h2 className="text-2xl font-bold text-gray-800">
+              {mode === 'error' ? '未処理のエラーレシートがありません' : '承認待ちのレシートがありません'}
+            </h2>
           </div>
           <p className="text-gray-500 mb-8">すべてのレシートの処理が完了しました。</p>
           <button
@@ -186,20 +281,37 @@ const ApprovePage: React.FC = () => {
   if (!queue[index]) return null;
 
   return (
-    <ApproveCard
-      key={queue[index].id}
-      receipt={queue[index]}
-      progress={`${index + 1} / ${queue.length}`}
-      remaining={queue.length - index}
-      processing={processing}
-      onApprove={handleApprove}
-      onMarkError={handleMarkError}
-      onSkip={handleSkip}
-      onPrev={handlePrev}
-      onNext={handleNext}
-      canPrev={index > 0}
-      canNext={index < queue.length - 1}
-    />
+    <>
+      <ApproveCard
+        key={queue[index].id}
+        receipt={queue[index]}
+        progress={`${index + 1} / ${queue.length}`}
+        remaining={queue.length - index}
+        processing={processing}
+        mode={mode}
+        onApprove={handleApprove}
+        onMarkError={handleMarkError}
+        onSkip={handleSkip}
+        onPrev={handlePrev}
+        onNext={handleNext}
+        canPrev={index > 0}
+        canNext={index < queue.length - 1}
+        onRerun={handleRerun}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
+      {editingReceipt && (
+        <Suspense fallback={null}>
+          <SplitEditModal
+            receipt={editingReceipt as React.ComponentProps<typeof SplitEditModal>['receipt']}
+            categories={[...CATEGORIES]}
+            sections={[...SECTIONS]}
+            onClose={() => setEditingReceipt(null)}
+            onSaved={handleEditSaved}
+          />
+        </Suspense>
+      )}
+    </>
   );
 };
 

@@ -13,6 +13,10 @@ interface ApproveCardProps {
   onNext: () => void;
   canPrev: boolean;
   canNext: boolean;
+  mode?: 'done' | 'error';
+  onRerun?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 const ApproveCard: React.FC<ApproveCardProps> = ({
@@ -27,11 +31,15 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
   onNext,
   canPrev,
   canNext,
+  mode = 'done',
+  onRerun,
+  onEdit,
+  onDelete,
 }) => {
   const [imgError, setImgError] = useState<boolean>(false);
 
   const formatAmount = (amount: number): string => {
-    return `\u00A5${amount.toLocaleString()}`;
+    return `¥${amount.toLocaleString()}`;
   };
 
   const result = receipt.result_json;
@@ -41,7 +49,7 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">承認モード</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{mode === 'error' ? 'エラー承認モード' : '承認モード'}</h1>
             <p className="text-sm text-gray-600 mt-1">
               残り {remaining} 件 (進捗 {progress})
             </p>
@@ -79,7 +87,13 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
               <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4">
                 読み取りデータ
               </h2>
-              
+
+              {mode === 'error' && receipt.error_message && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-md p-3 text-sm whitespace-pre-wrap break-words">
+                  {receipt.error_message}
+                </div>
+              )}
+
               {result ? (
                 <>
                   <div className="grid grid-cols-3 gap-y-3 text-lg">
@@ -156,19 +170,41 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
             <button
               type="button"
               onClick={onApprove}
-              disabled={processing}
+              disabled={processing || (mode === 'error' && !receipt.result_json)}
+              title={mode === 'error' && !receipt.result_json ? '読取結果がありません。再判定(R)してください' : undefined}
               className="rounded-md px-4 py-2 font-medium bg-green-600 text-white transition hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               承認 (A)
             </button>
-            <button
-              type="button"
-              onClick={onMarkError}
-              disabled={processing}
-              className="rounded-md px-4 py-2 font-medium bg-red-600 text-white transition hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              エラー (E)
-            </button>
+            {mode === 'error' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onRerun}
+                  disabled={processing}
+                  className="rounded-md px-4 py-2 font-medium bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  再判定 (R)
+                </button>
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  disabled={processing}
+                  className="rounded-md px-4 py-2 font-medium bg-indigo-600 text-white transition hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  編集 (C)
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={onMarkError}
+                disabled={processing}
+                className="rounded-md px-4 py-2 font-medium bg-red-600 text-white transition hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                エラー (E)
+              </button>
+            )}
             <button
               type="button"
               onClick={onSkip}
@@ -177,6 +213,16 @@ const ApproveCard: React.FC<ApproveCardProps> = ({
             >
               スキップ (S)
             </button>
+            {mode === 'error' && (
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={processing}
+                className="rounded-md px-4 py-2 font-medium bg-red-600 text-white transition hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                削除 (D)
+              </button>
+            )}
             <button
               type="button"
               onClick={onNext}
