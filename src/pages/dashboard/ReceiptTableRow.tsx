@@ -118,14 +118,30 @@ const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
               aria-expanded={errExpanded}
               title={errExpanded ? 'クリックで折りたたむ' : r.error_message}
               className={[
-                'mt-1 block w-full text-left text-xs text-red-600 font-semibold cursor-pointer',
+                'mt-1 flex items-start gap-1 w-full max-w-[220px] text-left',
+                'text-xs text-red-600 font-semibold cursor-pointer',
                 'hover:underline focus:outline-none focus:ring-1 focus:ring-red-400 rounded',
-                errExpanded
-                  ? 'whitespace-pre-wrap [overflow-wrap:anywhere]'
-                  : 'truncate max-w-[220px]',
               ].join(' ')}
             >
-              {r.error_message}
+              <span
+                aria-hidden="true"
+                className={[
+                  'shrink-0 inline-block leading-none mt-px transition-transform',
+                  errExpanded ? 'rotate-90' : '',
+                ].join(' ')}
+              >
+                ▸
+              </span>
+              <span
+                className={[
+                  'min-w-0',
+                  errExpanded
+                    ? 'whitespace-pre-wrap [overflow-wrap:anywhere]'
+                    : 'truncate',
+                ].join(' ')}
+              >
+                {r.error_message}
+              </span>
             </button>
           )}
         </td>
