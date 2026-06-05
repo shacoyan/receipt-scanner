@@ -111,7 +111,7 @@ const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
             setEditDraft={setEditDraft}
           />
           {isError && r.error_message && (
-            <p className="mt-1 text-xs text-red-600 font-semibold truncate max-w-[220px]" title={r.error_message}>
+            <p className="mt-1 text-xs text-red-600 font-semibold whitespace-pre-wrap [overflow-wrap:anywhere]">
               {r.error_message}
             </p>
           )}
