@@ -50,6 +50,7 @@ const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
   const result = isEditing && editDraft ? editDraft : r.result_json;
   const canEdit = (r.status === 'done' || r.status === 'error') && !!r.result_json;
   const isSplit = !!(r.result_json?.splits && r.result_json.splits.length >= 2);
+  const [errExpanded, setErrExpanded] = React.useState(false);
 
 
   return (
@@ -111,9 +112,21 @@ const ReceiptTableRowImpl: React.FC<ReceiptTableRowProps> = ({
             setEditDraft={setEditDraft}
           />
           {isError && r.error_message && (
-            <p className="mt-1 text-xs text-red-600 font-semibold whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setErrExpanded((v) => !v); }}
+              aria-expanded={errExpanded}
+              title={errExpanded ? 'クリックで折りたたむ' : r.error_message}
+              className={[
+                'mt-1 block w-full text-left text-xs text-red-600 font-semibold cursor-pointer',
+                'hover:underline focus:outline-none focus:ring-1 focus:ring-red-400 rounded',
+                errExpanded
+                  ? 'whitespace-pre-wrap [overflow-wrap:anywhere]'
+                  : 'truncate max-w-[220px]',
+              ].join(' ')}
+            >
               {r.error_message}
-            </p>
+            </button>
           )}
         </td>
 
