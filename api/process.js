@@ -1,5 +1,85 @@
 import { RECEIPT_PROMPT_V35 } from './lib/prompt.js';
 import { logger } from './lib/logger.js';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Anthropic /v1/messages を叩く。429 / 529 / 5xx を指数バックオフでリトライ。
+ * 成功時は Response オブジェクト（response.ok === true）を返す。
+ * リトライを尽くした最後の応答が ok でない場合は、従来と同一形式のエラーを throw する。
+ *
+ * @param {object} requestBody  Anthropic Messages API のリクエストボディ
+ * @param {object} [opts]
+ * @param {number} [opts.maxRetries=3]   429/5xx に対する追加リトライ回数（初回 + 最大 3 回 = 計 4 回試行）
+ * @param {number} [opts.baseDelayMs=2000] バックオフ基準。2s, 4s, 8s と倍々。
+ * @returns {Promise<Response>}  ok な fetch Response
+ * @throws {Error}  リトライ尽き時 / リトライ対象外エラー時。message は `Claude API error: ${status} ${errText}`
+ */
+async function callAnthropicWithRetry(requestBody, opts = {}) {
+  const maxRetries = opts.maxRetries ?? 3;
+  const baseDelayMs = opts.baseDelayMs ?? 2000;
+
+  let lastErrText = '';
+  let lastStatus = 0;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (response.ok) {
+      return response;
+    }
+
+    // 非 ok。本文は一度しか読めないので必ずここで text() する。
+    lastStatus = response.status;
+    lastErrText = await response.text();
+
+    const isRetryable =
+      response.status === 429 || response.status === 529 || response.status >= 500;
+
+    // 最終試行 or リトライ対象外 → 即 throw（従来挙動と同一メッセージ）
+    if (!isRetryable || attempt === maxRetries) {
+      throw new Error(`Claude API error: ${lastStatus} ${lastErrText}`);
+    }
+
+    // 待機時間決定: retry-after ヘッダ優先、無ければ指数バックオフ + ジッタ
+    const retryAfterRaw = response.headers.get('retry-after');
+    let waitMs;
+    if (
+      retryAfterRaw != null &&
+      retryAfterRaw !== '' &&
+      !Number.isNaN(Number(retryAfterRaw))
+    ) {
+      waitMs = Math.ceil(Number(retryAfterRaw) * 1000); // 秒指定（Anthropic は整数秒）
+    } else {
+      waitMs = baseDelayMs * Math.pow(2, attempt); // 2000, 4000, 8000
+    }
+    const jitter = Math.floor(Math.random() * 500); // 0〜500ms ジッタ
+    waitMs += jitter;
+
+    // 安全上限（retry-after が過大でも Function タイムアウトを守る）
+    waitMs = Math.min(waitMs, 20000);
+
+    logger.warn('process: anthropic retryable error, backing off', {
+      status: lastStatus,
+      attempt,
+      waitMs,
+    });
+
+    await sleep(waitMs);
+  }
+
+  // 理論上到達しないが保険
+  throw new Error(`Claude API error: ${lastStatus} ${lastErrText}`);
+}
+
 export const config = {
   api: {
     bodyParser: false,
@@ -192,8 +272,41 @@ export default async function handler(req, res) {
 
     let processed = 0;
     let errors = 0;
+    const THROTTLE_MS = 1500; // レシート間スロットル（1分流量抑制）
 
-    for (const receipt of pendingReceipts) {
+    const LOOP_STARTED_AT = Date.now();
+    // maxDuration=300s に対する安全予算。1レシート最悪 = 最大バックオフ(約60s) + API実処理(余裕10s) ≈ 70s。
+    // この余白を割り込んだら新規レシートに着手せず break し、残りは次回 cron に委ねる。
+    const TIME_BUDGET_MS = 270_000;        // 全体ハードリミット（maxDuration 300s の手前で離脱）
+    const PER_RECEIPT_RESERVE_MS = 70_000; // 1件着手に必要と見込む最悪所要
+
+    for (let i = 0; i < pendingReceipts.length; i++) {
+      const receipt = pendingReceipts[i];
+      const elapsed = Date.now() - LOOP_STARTED_AT;
+      if (i > 0 && elapsed + PER_RECEIPT_RESERVE_MS > TIME_BUDGET_MS) {
+        // 未着手分を pending に戻して次回 cron が拾えるようにする
+        const deferredIds = pendingReceipts.slice(i).map((r) => r.id);
+        const { error: requeueError } = await supabase
+          .from('receipts')
+          .update({ status: 'pending' })
+          .in('id', deferredIds)
+          .eq('status', 'processing');   // 着手済み(done/error)を誤って巻き戻さない安全弁
+
+        if (requeueError) {
+          logger.error('process: failed to requeue deferred receipts to pending — they remain stuck in processing', {
+            err: requeueError,
+            deferredIds,
+          });
+        }
+
+        logger.warn('process: time budget guard hit, deferring remaining receipts to next cron', {
+          processedSoFar: processed,
+          errorsSoFar: errors,
+          remaining: pendingReceipts.length - i,
+          elapsedMs: elapsed,
+        });
+        break;
+      }
       try {
         // Download image from Storage
         const { data: fileData, error: downloadError } = await supabase.storage
@@ -227,20 +340,7 @@ export default async function handler(req, res) {
           ],
         };
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': process.env.ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`Claude API error: ${response.status} ${errText}`);
-        }
+        const response = await callAnthropicWithRetry(requestBody);
 
         const data = await response.json();
         const textContent = data.content?.[0]?.text;
@@ -523,6 +623,10 @@ export default async function handler(req, res) {
           .eq('id', receipt.id);
 
         errors++;
+      } finally {
+        if (i < pendingReceipts.length - 1) {
+          await sleep(THROTTLE_MS);
+        }
       }
     }
 
