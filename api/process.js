@@ -239,6 +239,7 @@ export default async function handler(req, res) {
       .from('receipts')
       .select('*')
       .eq('status', 'pending')
+      .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .limit(10);
 

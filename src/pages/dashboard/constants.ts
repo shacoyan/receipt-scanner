@@ -5,13 +5,14 @@
 import type { ReceiptStatus } from '../../types/receipt';
 
 // ─── タブ ─────────────────────────────────────────────────────────────────
-export type TabKey = 'all' | 'analyzing' | 'done' | 'approved' | 'sent' | 'error';
+export type TabKey = 'all' | 'analyzing' | 'done' | 'approved' | 'sent' | 'error' | 'trash';
 
 export interface TabDef {
   key: TabKey;
   label: string;
   statuses: ReceiptStatus[] | null;
   sent: boolean | null;
+  trash?: boolean;
 }
 
 export const TABS: TabDef[] = [
@@ -21,6 +22,7 @@ export const TABS: TabDef[] = [
   { key: 'approved', label: '承認済み', statuses: ['approved'], sent: false },
   { key: 'sent', label: '送信済み', statuses: ['approved'], sent: true },
   { key: 'error', label: 'エラー', statuses: ['error'], sent: null },
+  { key: 'trash', label: 'ゴミ箱', statuses: null, sent: null, trash: true },
 ];
 
 // ─── カテゴリ / セクション ────────────────────────────────────────────────

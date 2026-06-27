@@ -123,7 +123,7 @@ export default async function handler(request, response) {
       const supabase = await getSupabase();
       const { data: receiptData, error: receiptSelectError } = await supabase
         .from('receipts')
-        .select('storage_path, mime_type, original_filename, section_id, result_json')
+        .select('storage_path, mime_type, original_filename, section_id, result_json, deleted_at')
         .eq('id', receipt_id)
         .single();
 
@@ -131,6 +131,12 @@ export default async function handler(request, response) {
         logger.error('register: receipt select failed', { err: receiptSelectError });
       }
       receipt = receiptData;
+      // 会計事故の正本ガード: 論理削除済み（ゴミ箱）のレシートは freee 送信を中止。
+      if (receipt && receipt.deleted_at != null) {
+        return response.status(409).json({
+          error: '削除済み(ゴミ箱)のレシートはfreee送信できません',
+        });
+      }
       if (receipt) {
         result_json = receipt.result_json;
 

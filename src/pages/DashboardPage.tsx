@@ -140,92 +140,121 @@ const DashboardPage: React.FC = () => {
 
         {/* Bulk actions */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <button
-            onClick={b.approveSelected}
-            disabled={b.selected.size === 0}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-              b.selected.size > 0
-                ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            選択した{b.selected.size}件を承認
-          </button>
-          <button
-            onClick={b.deleteSelected}
-            disabled={b.selected.size === 0}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-              b.selected.size > 0
-                ? 'bg-red-600 text-white hover:bg-red-700 shadow-sm'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            選択した{b.selected.size}件を削除
-          </button>
-          <button
-            onClick={b.unapproveSelected}
-            disabled={b.selected.size === 0}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-              b.selected.size > 0
-                ? 'bg-yellow-500 text-white hover:bg-yellow-600 shadow-sm'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            選択した{b.selected.size}件を解析済みに戻す
-          </button>
-          <button
-            onClick={b.rerunSelected}
-            disabled={b.selected.size === 0}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-              b.selected.size > 0
-                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            選択した{b.selected.size}件を再判定
-          </button>
-          {activeTab === 'error' && (
-            <button
-              onClick={() => navigate('/approve?mode=error')}
-              disabled={tabCounts.error === 0}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition shadow-sm ${
-                tabCounts.error === 0
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
-            >
-              承認モードで確認
-            </button>
+          {activeTab === 'trash' ? (
+            <>
+              <button
+                onClick={b.restoreSelected}
+                disabled={b.selected.size === 0}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  b.selected.size > 0
+                    ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                選択した{b.selected.size}件を復元
+              </button>
+              <button
+                onClick={b.permanentDeleteSelected}
+                disabled={b.selected.size === 0}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  b.selected.size > 0
+                    ? 'bg-red-700 text-white hover:bg-red-800 shadow-sm'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                選択した{b.selected.size}件を完全削除
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={b.approveSelected}
+                disabled={b.selected.size === 0}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  b.selected.size > 0
+                    ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                選択した{b.selected.size}件を承認
+              </button>
+              <button
+                onClick={b.deleteSelected}
+                disabled={b.selected.size === 0}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  b.selected.size > 0
+                    ? 'bg-red-600 text-white hover:bg-red-700 shadow-sm'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                選択した{b.selected.size}件をゴミ箱へ移動
+              </button>
+              <button
+                onClick={b.unapproveSelected}
+                disabled={b.selected.size === 0}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  b.selected.size > 0
+                    ? 'bg-yellow-500 text-white hover:bg-yellow-600 shadow-sm'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                選択した{b.selected.size}件を解析済みに戻す
+              </button>
+              <button
+                onClick={b.rerunSelected}
+                disabled={b.selected.size === 0}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  b.selected.size > 0
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                選択した{b.selected.size}件を再判定
+              </button>
+              {activeTab === 'error' && (
+                <button
+                  onClick={() => navigate('/approve?mode=error')}
+                  disabled={tabCounts.error === 0}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition shadow-sm ${
+                    tabCounts.error === 0
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  承認モードで確認
+                </button>
+              )}
+              <div className="flex-1" />
+              <button
+                onClick={() => {
+                  if (!hasSelection && approvedUnsentCount >= 10) {
+                    if (!window.confirm(`承認済み未送信 ${approvedUnsentCount} 件を freee に一括送信します。よろしいですか？`)) return;
+                  }
+                  b.sendToFreee(hasSelection ? b.selected : undefined);
+                }}
+                disabled={
+                  b.sending ||
+                  (hasSelection ? approvedUnsentSelectedCount === 0 : approvedUnsentCount === 0)
+                }
+                className={[
+                  'px-4 py-2 rounded-md text-sm font-medium transition shadow-sm',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  hasSelection
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700',
+                ].join(' ')}
+                title={hasSelection
+                  ? `選択 ${b.selected.size} 件のうち送信可能 ${approvedUnsentSelectedCount} 件`
+                  : `承認済み未送信 ${approvedUnsentCount} 件を全件送信`}
+              >
+                {b.sending
+                  ? '送信中...'
+                  : hasSelection
+                    ? `選択した${approvedUnsentSelectedCount}件をfreeeに送信`
+                    : `承認済み${approvedUnsentCount}件をfreeeに送信`}
+              </button>
+            </>
           )}
-          <div className="flex-1" />
-          <button
-            onClick={() => {
-              if (!hasSelection && approvedUnsentCount >= 10) {
-                if (!window.confirm(`承認済み未送信 ${approvedUnsentCount} 件を freee に一括送信します。よろしいですか？`)) return;
-              }
-              b.sendToFreee(hasSelection ? b.selected : undefined);
-            }}
-            disabled={
-              b.sending ||
-              (hasSelection ? approvedUnsentSelectedCount === 0 : approvedUnsentCount === 0)
-            }
-            className={[
-              'px-4 py-2 rounded-md text-sm font-medium transition shadow-sm',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              hasSelection
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700',
-            ].join(' ')}
-            title={hasSelection
-              ? `選択 ${b.selected.size} 件のうち送信可能 ${approvedUnsentSelectedCount} 件`
-              : `承認済み未送信 ${approvedUnsentCount} 件を全件送信`}
-          >
-            {b.sending
-              ? '送信中...'
-              : hasSelection
-                ? `選択した${approvedUnsentSelectedCount}件をfreeeに送信`
-                : `承認済み${approvedUnsentCount}件をfreeeに送信`}
-          </button>
         </div>
 
         {/* Content card */}

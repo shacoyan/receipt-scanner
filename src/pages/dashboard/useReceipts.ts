@@ -14,7 +14,7 @@ export type TabCounts = Record<TabKey, number>;
 type TabCountsResponse = TabCounts;
 
 const EMPTY_COUNTS: TabCounts = {
-  all: 0, analyzing: 0, done: 0, approved: 0, sent: 0, error: 0,
+  all: 0, analyzing: 0, done: 0, approved: 0, sent: 0, error: 0, trash: 0,
 };
 
 export interface UseReceiptsResult {
@@ -58,8 +58,14 @@ export function useReceipts(): UseReceiptsResult {
   const fetchReceipts = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const statusParam = statusQueryParam();
-      const url = `/api/receipts?${statusParam ? statusParam + '&' : ''}page=${page}&limit=${PAGE_LIMIT}`;
+      const activeDef = TABS.find((t) => t.key === activeTab);
+      let url: string;
+      if (activeDef?.trash) {
+        url = `/api/receipts?trash=1&page=${page}&limit=${PAGE_LIMIT}`;
+      } else {
+        const statusParam = statusQueryParam();
+        url = `/api/receipts?${statusParam ? statusParam + '&' : ''}page=${page}&limit=${PAGE_LIMIT}`;
+      }
       const res = await fetch(url);
       if (!res.ok) throw new Error('fetch failed');
       const json: ReceiptsResponse = await res.json();
@@ -70,7 +76,7 @@ export function useReceipts(): UseReceiptsResult {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [page, statusQueryParam]);
+  }, [page, statusQueryParam, activeTab]);
 
   // ─── タブカウント フェッチ（1 リクエストに集約）────────────────────
   const fetchTabCounts = useCallback(async () => {
@@ -85,6 +91,7 @@ export function useReceipts(): UseReceiptsResult {
         approved: j.approved ?? 0,
         sent: j.sent ?? 0,
         error: j.error ?? 0,
+        trash: j.trash ?? 0,
       });
     } catch {
       // ignore

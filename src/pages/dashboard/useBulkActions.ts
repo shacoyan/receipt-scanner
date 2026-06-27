@@ -26,6 +26,8 @@ export interface UseBulkActionsResult {
   // Bulk
   approveSelected: () => Promise<void>;
   deleteSelected: () => Promise<void>;
+  restoreSelected: () => Promise<void>;
+  permanentDeleteSelected: () => Promise<void>;
   unapproveSelected: () => Promise<void>;
   rerunSelected: () => Promise<void>;
 
@@ -177,11 +179,11 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
     }
   }, [selected, onMutate]);
 
-  // ─── Bulk delete ──────────────────────────────────────────────────────────
+  // ─── Bulk delete (論理削除 = ゴミ箱へ移動) ──────────────────────────────────
   const deleteSelected = useCallback(async () => {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
-    if (!window.confirm(`選択した${ids.length}件のレシートを削除しますか？\nこの操作は元に戻せません。`)) return;
+    if (!window.confirm(`選択した${ids.length}件のレシートをゴミ箱に移動しますか？`)) return;
     try {
       const res = await fetch('/api/receipts', {
         method: 'DELETE',
@@ -192,7 +194,44 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
       setSelected(new Set());
       await onMutate();
     } catch {
-      alert('削除に失敗しました');
+      alert('ゴミ箱への移動に失敗しました');
+    }
+  }, [selected, onMutate]);
+
+  // ─── Bulk restore (ゴミ箱から復元) ──────────────────────────────────────────
+  const restoreSelected = useCallback(async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    try {
+      const res = await fetch('/api/receipts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'restore' }),
+      });
+      if (!res.ok) throw new Error();
+      setSelected(new Set());
+      await onMutate();
+    } catch {
+      alert('復元に失敗しました');
+    }
+  }, [selected, onMutate]);
+
+  // ─── Bulk permanent delete (完全削除・物理削除) ─────────────────────────────
+  const permanentDeleteSelected = useCallback(async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(`選択した${ids.length}件のレシートを完全に削除します。\nこの操作は元に戻せません。本当によろしいですか？`)) return;
+    try {
+      const res = await fetch('/api/receipts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, permanent: true }),
+      });
+      if (!res.ok) throw new Error();
+      setSelected(new Set());
+      await onMutate();
+    } catch {
+      alert('完全削除に失敗しました');
     }
   }, [selected, onMutate]);
 
@@ -236,7 +275,7 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
   // ─── Send to freee ────────────────────────────────────────────────────────
   const sendToFreee = useCallback(async (targetIds?: ReadonlySet<string>) => {
     const base = receipts.filter(
-      (r) => r.status === 'approved' && r.result_json && !r.freee_sent_at
+      (r) => r.status === 'approved' && r.result_json && !r.freee_sent_at && !r.deleted_at
     );
     const targets = targetIds && targetIds.size > 0
       ? base.filter((r) => targetIds.has(r.id))
@@ -298,6 +337,8 @@ export function useBulkActions(params: UseBulkActionsParams): UseBulkActionsResu
 
     approveSelected,
     deleteSelected,
+    restoreSelected,
+    permanentDeleteSelected,
     unapproveSelected,
     rerunSelected,
 

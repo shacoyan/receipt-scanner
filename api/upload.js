@@ -1,5 +1,6 @@
 import formidable from 'formidable';
 import crypto from 'crypto';
+import sharp from 'sharp';
 import { logger } from './lib/logger.js';
 
 export const config = {
@@ -47,15 +48,37 @@ export default async function handler(req, res) {
 
       const id = crypto.randomUUID();
       const ext = path.extname(file.originalFilename || '').replace('.', '') || 'jpg';
-      const storagePath = `${yearMonth}/${id}.${ext}`;
 
-      // Read file and upload to Supabase Storage
+      // Read file
       const imageBuffer = await fs.readFile(file.filepath);
 
+      // ── リサイズ: 長辺2000px / JPEG q85 / EXIF除去（.rotate()でEXIF向き反映後にメタ落ち）──
+      //    失敗時は元バッファ・元拡張子・元MIMEにフォールバック（3要素を一貫させる）。
+      let outBuffer = imageBuffer;
+      let outExt = ext;
+      let outMime = mimeType;
+      try {
+        outBuffer = await sharp(imageBuffer)
+          .rotate()
+          .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        outExt = 'jpg';
+        outMime = 'image/jpeg';
+      } catch (resizeErr) {
+        logger.warn('upload: sharp resize failed (using original)', { err: resizeErr, fileName: file.originalFilename });
+        outBuffer = imageBuffer;
+        outExt = ext;
+        outMime = mimeType;
+      }
+
+      const storagePath = `${yearMonth}/${id}.${outExt}`;
+
+      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('receipts')
-        .upload(storagePath, imageBuffer, {
-          contentType: mimeType,
+        .upload(storagePath, outBuffer, {
+          contentType: outMime,
           upsert: false,
         });
 
@@ -69,7 +92,7 @@ export default async function handler(req, res) {
         id,
         storage_path: storagePath,
         original_filename: file.originalFilename || 'unknown',
-        mime_type: mimeType,
+        mime_type: outMime,
         status: 'pending',
       };
       if (sectionId) {

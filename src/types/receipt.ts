@@ -41,6 +41,7 @@ export interface Receipt {
   created_at: string;
   freee_sent_at: string | null;
   freee_deal_id: string | null;
+  deleted_at?: string | null;
 }
 
 /**

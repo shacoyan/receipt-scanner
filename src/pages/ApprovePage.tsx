@@ -119,7 +119,7 @@ const ApprovePage: React.FC = () => {
   const handleDelete = useCallback(() => {
     const receipt = queue[index];
     if (!receipt || processing) return;
-    if (!window.confirm('このレシートを削除しますか？')) return;
+    if (!window.confirm('このレシートをゴミ箱に移動しますか？')) return;
     setProcessing(true);
     fetch('/api/receipts', {
       method: 'DELETE',
@@ -134,7 +134,7 @@ const ApprovePage: React.FC = () => {
       removeFromQueue(receipt.id);
     })
     .catch(err => {
-      alert(err.message || '削除処理に失敗しました');
+      alert(err.message || 'ゴミ箱への移動に失敗しました');
     })
     .finally(() => setProcessing(false));
   }, [index, queue, processing, removeFromQueue]);

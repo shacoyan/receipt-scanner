@@ -50,13 +50,15 @@ async function handleGetCounts(_req, res) {
     const supabase = await getSupabase();
     const base = () => supabase.from('receipts').select('*', { count: 'exact', head: true });
 
-    const [all, analyzing, done, approvedUnsent, sent, errorCnt] = await Promise.all([
-      base(),
-      base().in('status', ['pending', 'processing']),
-      base().in('status', ['done']),
-      base().in('status', ['approved']).is('freee_sent_at', null),
-      base().in('status', ['approved']).not('freee_sent_at', 'is', null),
-      base().in('status', ['error']),
+    // アクティブ（deleted_at IS NULL）のみカウント。trash 枝のみゴミ箱を数える。
+    const [all, analyzing, done, approvedUnsent, sent, errorCnt, trash] = await Promise.all([
+      base().is('deleted_at', null),
+      base().is('deleted_at', null).in('status', ['pending', 'processing']),
+      base().is('deleted_at', null).in('status', ['done']),
+      base().is('deleted_at', null).in('status', ['approved']).is('freee_sent_at', null),
+      base().is('deleted_at', null).in('status', ['approved']).not('freee_sent_at', 'is', null),
+      base().is('deleted_at', null).in('status', ['error']),
+      base().not('deleted_at', 'is', null),
     ]);
 
     return res.status(200).json({
@@ -66,6 +68,7 @@ async function handleGetCounts(_req, res) {
       approved: approvedUnsent.count || 0,
       sent: sent.count || 0,
       error: errorCnt.count || 0,
+      trash: trash.count || 0,
     });
   } catch (error) {
     logger.error('receipts: counts query failed', { err: error });
@@ -81,7 +84,8 @@ async function handleGet(req, res) {
     }
 
     const supabase = await getSupabase();
-    const { status, sent, page: pageStr, limit: limitStr } = req.query || {};
+    const { status, sent, page: pageStr, limit: limitStr, trash, deleted } = req.query || {};
+    const isTrash = trash === '1' || deleted === '1';
     const page = Math.max(1, parseInt(pageStr, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(limitStr, 10) || 50));
     const offset = (page - 1) * limit;
@@ -90,18 +94,29 @@ async function handleGet(req, res) {
     let query = supabase
       .from('receipts')
       .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (status) {
-      const statuses = Array.isArray(status) ? status : [status];
-      query = query.in('status', statuses);
-    }
+    if (isTrash) {
+      // ゴミ箱: 論理削除済みのみ・捨てた順（新しい順）。status/sent 分岐はスキップ。
+      query = query
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false });
+    } else {
+      // 通常一覧: アクティブのみ・作成日降順。status/sent フィルタ温存。
+      query = query
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
 
-    if (sent === 'true') {
-      query = query.not('freee_sent_at', 'is', null);
-    } else if (sent === 'false') {
-      query = query.is('freee_sent_at', null);
+      if (status) {
+        const statuses = Array.isArray(status) ? status : [status];
+        query = query.in('status', statuses);
+      }
+
+      if (sent === 'true') {
+        query = query.not('freee_sent_at', 'is', null);
+      } else if (sent === 'false') {
+        query = query.is('freee_sent_at', null);
+      }
     }
 
     const { data, count, error } = await query;
@@ -148,13 +163,16 @@ async function handlePatch(req, res) {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
-    if (!action || !['approve', 'update', 'unapprove', 'rerun', 'markError'].includes(action)) {
-      return res.status(400).json({ error: 'action must be "approve", "unapprove", "update", "rerun", or "markError"' });
+    if (!action || !['approve', 'update', 'unapprove', 'rerun', 'markError', 'restore'].includes(action)) {
+      return res.status(400).json({ error: 'action must be "approve", "unapprove", "update", "rerun", "markError", or "restore"' });
     }
 
     let updatePayload;
     if (action === 'approve') {
       updatePayload = { status: 'approved' };
+    } else if (action === 'restore') {
+      // ゴミ箱からの復元。status は変更しない（done のまま等を維持）。
+      updatePayload = { deleted_at: null };
     } else if (action === 'unapprove') {
       updatePayload = { status: 'done' };
     } else if (action === 'rerun') {
@@ -272,12 +290,28 @@ async function handleDelete(req, res) {
       body = JSON.parse(body);
     }
 
-    const { ids } = body || {};
+    const { ids, permanent } = body || {};
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
+    // ─── 既定: 論理削除（ゴミ箱へ移動）。storage / 行は残す。冪等。 ──────
+    if (!permanent) {
+      const { error: softError, count } = await supabase
+        .from('receipts')
+        .update({ deleted_at: new Date().toISOString() }, { count: 'exact' })
+        .in('id', ids)
+        .is('deleted_at', null);
+
+      if (softError) {
+        throw new Error(`Soft delete error: ${softError.message}`);
+      }
+
+      return res.status(200).json({ success: true, mode: 'soft', deleted: count || 0 });
+    }
+
+    // ─── permanent: true = 物理削除（現行フロー） ────────────────────
     // 1. Get storage_path for each receipt
     const { data: receipts, error: selectError } = await supabase
       .from('receipts')
@@ -313,7 +347,7 @@ async function handleDelete(req, res) {
       throw new Error(`Delete error: ${deleteError.message}`);
     }
 
-    return res.status(200).json({ success: true, deleted: count || 0 });
+    return res.status(200).json({ success: true, mode: 'hard', deleted: count || 0 });
   } catch (error) {
     logger.error('receipts: DELETE failed', { err: error });
     return res.status(500).json({ error: error.message });
