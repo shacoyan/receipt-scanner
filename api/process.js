@@ -147,6 +147,10 @@ const STORE_NORMALIZATION_RULES = [
   { name: 'eneos', pattern: /ENEOS/i, normalized: 'ENEOS', replaceMode: 'full' },
   // タイムズ24株式会社（駐車場運営会社・施設名より優先 / v3.9.2 拡張・部分一致, 全角/半角 24 揺れ吸収 / v3.9.4: 'full' 即 return → suffix 株式会社二重出力解消, C4 重複整理）
   { name: 'times24', pattern: /(?:タイムズ|Times)\s*[2２][4４]/i, normalized: 'タイムズ24株式会社', replaceMode: 'full' },
+  // ドン・キホーテ系（領収証小印字・MEGA/中点有無・支店揺れを統一し partner 分裂防止 / replaceMode full）
+  { name: 'donki', pattern: /ドン[・･\s]?キホーテ/, normalized: 'ドン・キホーテ', replaceMode: 'full' },
+  // カクヤス系（株式会社有無・スペース揺れを統一し partner 分裂防止 / replaceMode full）
+  { name: 'kakuyasu', pattern: /カクヤス/, normalized: 'カクヤス', replaceMode: 'full' },
 ];
 
 /**
