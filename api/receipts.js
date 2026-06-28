@@ -7,7 +7,7 @@ import { logger } from './lib/logger.js';
 // - FIFO eviction at MAX_ENTRIES to prevent unbounded growth.
 const SIGNED_URL_TTL_MS = 50 * 60 * 1000;
 const SIGNED_URL_TTL_SEC = 60 * 60;
-const SIGNED_URL_MAX_ENTRIES = 500;
+const SIGNED_URL_MAX_ENTRIES = 2000;
 const _signedUrlCache = new Map();
 
 async function getCachedSignedUrl(supabase, storagePath) {
@@ -24,6 +24,50 @@ async function getCachedSignedUrl(supabase, storagePath) {
   }
   _signedUrlCache.set(storagePath, { url: data.signedUrl, expiresAt: now + SIGNED_URL_TTL_MS });
   return data.signedUrl;
+}
+
+// ─── P2-2: counts 60s in-memory cache（Map+TTL・固定キー） ─────────────
+// 7 並列 head COUNT は温存（PostgREST 制約で 1 本化困難）。warm invocation 間で
+// 往復を実質削減。**全 mutation 分岐で必ず invalidateCountsCache() を呼ぶこと**
+// （漏れ＝Critical）。
+const COUNTS_CACHE_TTL_MS = 60 * 1000;
+const COUNTS_CACHE_KEY = 'counts';
+const _countsCache = new Map();
+
+function getCountsCache() {
+  const hit = _countsCache.get(COUNTS_CACHE_KEY);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  return null;
+}
+function setCountsCache(value) {
+  _countsCache.set(COUNTS_CACHE_KEY, { value, expiresAt: Date.now() + COUNTS_CACHE_TTL_MS });
+}
+function invalidateCountsCache() {
+  _countsCache.delete(COUNTS_CACHE_KEY);
+}
+
+// ─── P2-1: ETag 用の安定ハッシュ（JSON 文字列の単純 32bit FNV 風ハッシュ） ───
+function stableHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(16);
+}
+
+// body(JSON) + scope(クエリパラメータ集合) から ETag を生成し、If-None-Match 一致なら
+// 304 を返す。一致しなければ通常の 200 を送る。手動 If-None-Match 方式のため no-store で
+// ブラウザHTTPキャッシュを無効化し、mutation 直後の即時 refetch が stale 表示しないようにする。
+function sendWithETag(req, res, scope, payload) {
+  const etag = `"${stableHash(scope + '|' + JSON.stringify(payload))}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'private, no-store');
+  const inm = req.headers['if-none-match'];
+  if (inm && inm === etag) {
+    return res.status(304).end();
+  }
+  return res.status(200).json(payload);
 }
 
 const ALLOWED_CATEGORIES = ['消耗品費', '交通費', '交際費', '通信費', '雑費', '仕入高'];
@@ -45,8 +89,14 @@ export default async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-async function handleGetCounts(_req, res) {
+async function handleGetCounts(req, res) {
   try {
+    // P2-2: 60s cache ヒット時は DB 往復をスキップ（ETag 経路は維持）。
+    const cached = getCountsCache();
+    if (cached) {
+      return sendWithETag(req, res, 'counts', cached);
+    }
+
     const supabase = await getSupabase();
     const base = () => supabase.from('receipts').select('*', { count: 'exact', head: true });
 
@@ -61,7 +111,7 @@ async function handleGetCounts(_req, res) {
       base().not('deleted_at', 'is', null),
     ]);
 
-    return res.status(200).json({
+    const payload = {
       all: all.count || 0,
       analyzing: analyzing.count || 0,
       done: done.count || 0,
@@ -69,7 +119,9 @@ async function handleGetCounts(_req, res) {
       sent: sent.count || 0,
       error: errorCnt.count || 0,
       trash: trash.count || 0,
-    });
+    };
+    setCountsCache(payload);
+    return sendWithETag(req, res, 'counts', payload);
   } catch (error) {
     logger.error('receipts: counts query failed', { err: error });
     return res.status(500).json({ error: error.message });
@@ -91,9 +143,10 @@ async function handleGet(req, res) {
     const offset = (page - 1) * limit;
 
     // Build query
+    // P1-4: select('*') → 必要列の明示指定（result_json は必須＝Dashboard インライン split 表示/編集ボタンが依存）。
     let query = supabase
       .from('receipts')
-      .select('*', { count: 'exact' })
+      .select('id,status,result_json,error_message,section_id,created_at,freee_sent_at,freee_deal_id,storage_path', { count: 'exact' })
       .range(offset, offset + limit - 1);
 
     if (isTrash) {
@@ -136,11 +189,14 @@ async function handleGet(req, res) {
       })
     );
 
-    return res.status(200).json({
+    const payload = {
       data: dataWithUrls,
       total: count || 0,
       page,
-    });
+    };
+    // P2-1: ETag はクエリパラメータ込みで一意化（status/sent/page/limit/trash）。
+    const scope = JSON.stringify({ status, sent, page, limit, isTrash });
+    return sendWithETag(req, res, scope, payload);
   } catch (error) {
     logger.error('receipts: GET failed', { err: error });
     return res.status(500).json({ error: error.message });
@@ -273,6 +329,10 @@ async function handlePatch(req, res) {
       throw new Error(`Update error: ${error.message}`);
     }
 
+    // P2-2: 全 mutation 分岐（approve/unapprove/rerun/markError/update/restore）は
+    // この単一 update を通る → ここで counts cache を無効化（漏れなし）。
+    invalidateCountsCache();
+
     return res.status(200).json({ success: true, updated: count || 0 });
   } catch (error) {
     logger.error('receipts: PATCH failed', { err: error });
@@ -307,6 +367,9 @@ async function handleDelete(req, res) {
       if (softError) {
         throw new Error(`Soft delete error: ${softError.message}`);
       }
+
+      // P2-2: soft delete で counts cache を無効化。
+      invalidateCountsCache();
 
       return res.status(200).json({ success: true, mode: 'soft', deleted: count || 0 });
     }
@@ -346,6 +409,9 @@ async function handleDelete(req, res) {
     if (deleteError) {
       throw new Error(`Delete error: ${deleteError.message}`);
     }
+
+    // P2-2: hard delete で counts cache を無効化。
+    invalidateCountsCache();
 
     return res.status(200).json({ success: true, mode: 'hard', deleted: count || 0 });
   } catch (error) {

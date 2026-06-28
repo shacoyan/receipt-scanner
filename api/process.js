@@ -239,9 +239,10 @@ export default async function handler(req, res) {
     const supabase = await getSupabase();
 
     // Fetch up to 10 pending receipts (oldest first)
+    // P1-5: ループは id/storage_path/mime_type の 3 列のみ使用 → select を限定し cron 帯域削減。
     const { data: pendingReceipts, error: fetchError } = await supabase
       .from('receipts')
-      .select('*')
+      .select('id, storage_path, mime_type')
       .eq('status', 'pending')
       .is('deleted_at', null)
       .order('created_at', { ascending: true })

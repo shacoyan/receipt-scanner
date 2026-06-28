@@ -43,6 +43,34 @@ export function useReceipts(): UseReceiptsResult {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // P2-1: query キー別に直近 ETag を保持し If-None-Match で送出（304 で帯域節約）
+  const etagRef = useRef<Map<string, string>>(new Map());
+  // P1-2: 前回レスポンス body(JSON 文字列)を保持し、一致なら setState を skip（参照同一性維持で re-render 抑止）
+  const lastBodyRef = useRef<Map<string, string>>(new Map());
+
+  // ─── ETag 対応 fetch（304 / body 同一なら applier を呼ばず false を返す）────
+  const fetchWithETag = useCallback(
+    async (url: string, key: string): Promise<{ json: unknown; changed: boolean } | null> => {
+      const headers: Record<string, string> = {};
+      const prevEtag = etagRef.current.get(key);
+      if (prevEtag) headers['If-None-Match'] = prevEtag;
+      const res = await fetch(url, { headers });
+      // 304: 変化なし → 現在の state を保持
+      if (res.status === 304) return { json: null, changed: false };
+      if (!res.ok) throw new Error('fetch failed');
+      const etag = res.headers.get('ETag');
+      if (etag) etagRef.current.set(key, etag);
+      const text = await res.text();
+      // body 同一なら（ETag 未対応/プロキシ剥がし等の保険）skip
+      if (lastBodyRef.current.get(key) === text) {
+        return { json: null, changed: false };
+      }
+      lastBodyRef.current.set(key, text);
+      return { json: text ? JSON.parse(text) : null, changed: true };
+    },
+    [],
+  );
+
   // ─── クエリ文字列生成 ─────────────────────────────────────────────────
   const statusQueryParam = useCallback((): string => {
     const tab = TABS.find((t) => t.key === activeTab);
@@ -66,24 +94,27 @@ export function useReceipts(): UseReceiptsResult {
         const statusParam = statusQueryParam();
         url = `/api/receipts?${statusParam ? statusParam + '&' : ''}page=${page}&limit=${PAGE_LIMIT}`;
       }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('fetch failed');
-      const json: ReceiptsResponse = await res.json();
-      setReceipts(json.data);
-      setTotal(json.total);
+      const result = await fetchWithETag(url, `list:${url}`);
+      // 304 / body 同一 → state を保持して re-render を抑止
+      if (result && result.changed) {
+        const json = result.json as ReceiptsResponse;
+        setReceipts(json.data);
+        setTotal(json.total);
+      }
     } catch {
       // silently ignore for auto-refresh
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [page, statusQueryParam, activeTab]);
+  }, [page, statusQueryParam, activeTab, fetchWithETag]);
 
   // ─── タブカウント フェッチ（1 リクエストに集約）────────────────────
   const fetchTabCounts = useCallback(async () => {
     try {
-      const res = await fetch('/api/receipts?counts=1');
-      if (!res.ok) return;
-      const j = (await res.json()) as Partial<TabCountsResponse>;
+      const result = await fetchWithETag('/api/receipts?counts=1', 'counts');
+      // 304 / body 同一 → 現在の tabCounts を保持して re-render を抑止
+      if (!result || !result.changed) return;
+      const j = result.json as Partial<TabCountsResponse>;
       setTabCounts({
         all: j.all ?? 0,
         analyzing: j.analyzing ?? 0,
@@ -96,7 +127,7 @@ export function useReceipts(): UseReceiptsResult {
     } catch {
       // ignore
     }
-  }, []);
+  }, [fetchWithETag]);
 
   // ─── 公開: refetch / refetchSilent ────────────────────────────────────
   const refetch = useCallback(async () => {
@@ -113,32 +144,55 @@ export function useReceipts(): UseReceiptsResult {
     fetchTabCounts();
   }, [fetchReceipts, fetchTabCounts]);
 
-  // ─── 自動更新タイマー ────────────────────────────────────────────────
+  // ─── 自動更新タイマー（P1-1: hidden 時は張らない / clearInterval）─────────
   useEffect(() => {
-    const tick = () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+    const refetchSilently = () => {
       fetchReceipts(true);
       fetchTabCounts();
     };
-    const id = setInterval(tick, AUTO_REFRESH_MS);
-    timerRef.current = id;
 
-    const onVisible = () => {
-      if (!document.hidden) {
-        fetchReceipts(true);
-        fetchTabCounts();
+    // P1-1: 可視時のみ setInterval を張り、hidden になったら clearInterval して
+    // タイマー自体を止める（tick 内 early-return では JS タイマーが生き続ける）。
+    const startTimer = () => {
+      if (timerRef.current !== null) return;
+      timerRef.current = setInterval(refetchSilently, AUTO_REFRESH_MS);
+    };
+    const stopTimer = () => {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+
+    // P1-2: focus + visibilitychange の dedup（直近実行 ts で ~500ms collapse）
+    let lastEventRefetch = 0;
+    const onEventRefetch = () => {
+      const now = Date.now();
+      if (now - lastEventRefetch < 500) return; // 重複イベントを 1 回に collapse
+      lastEventRefetch = now;
+      refetchSilently();
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopTimer(); // hidden 中は 0 リクエスト
+      } else {
+        startTimer();
+        onEventRefetch(); // タブ復帰で 1 回だけ refetch
       }
     };
     const onFocus = () => {
-      fetchReceipts(true);
-      fetchTabCounts();
+      onEventRefetch();
     };
-    document.addEventListener('visibilitychange', onVisible);
+
+    // 初期状態: 可視ならタイマー起動
+    if (typeof document === 'undefined' || !document.hidden) startTimer();
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
 
     return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', onVisible);
+      stopTimer();
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
     };
   }, [fetchReceipts, fetchTabCounts]);

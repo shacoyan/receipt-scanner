@@ -36,7 +36,7 @@ export const SECTIONS = [
 
 // ─── ページング / 自動更新 ────────────────────────────────────────────────
 export const PAGE_LIMIT = 50;
-export const AUTO_REFRESH_MS = 10_000;
+export const AUTO_REFRESH_MS = 20_000;
 
 // ─── ステータスバッジ ─────────────────────────────────────────────────────
 export const STATUS_BADGE: Record<ReceiptStatus, { bg: string; text: string; label: string }> = {

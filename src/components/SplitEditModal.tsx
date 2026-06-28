@@ -39,6 +39,7 @@ const SplitEditModal: React.FC<SplitEditModalProps> = ({
             <img
               src={receipt.image_url}
               alt="Receipt"
+              decoding="async"
               className="w-full h-full object-contain bg-gray-50 max-h-[80vh]"
             />
           ) : (
