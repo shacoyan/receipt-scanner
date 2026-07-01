@@ -12,6 +12,7 @@ import {
 } from './lib/freee.js';
 import { getSupabase } from './lib/supabase.js';
 import { logger } from './lib/logger.js';
+import sharp from 'sharp';
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
@@ -118,6 +119,7 @@ export default async function handler(request, response) {
     let freeeReceiptId = null;
     let receipt = null;
     let result_json = null;
+    let fullBuffer = null;
 
     if (receipt_id) {
       const supabase = await getSupabase();
@@ -150,6 +152,7 @@ export default async function handler(request, response) {
 
         if (fileData) {
           const buffer = Buffer.from(await fileData.arrayBuffer());
+          fullBuffer = buffer;
           const upload = await uploadReceiptToFreee(
             companyId,
             buffer,
@@ -220,6 +223,33 @@ export default async function handler(request, response) {
     });
 
     if (dealResult.ok) {
+      // freee 送信・取引作成が完了した後に、Storage 保存画像を 800px へ縮小（best-effort）。
+      // freee 側にはフル解像度が既に渡っており、ここでの失敗は 200/取引に一切影響させない。
+      if (fullBuffer && receipt && receipt.storage_path && String(receipt.mime_type || '').startsWith('image/')) {
+        try {
+          const small = await sharp(fullBuffer)
+            .rotate()
+            .resize({ width: 800, height: 800, fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+          const supabaseForShrink = await getSupabase();
+          const { error: shrinkUploadError } = await supabaseForShrink.storage
+            .from('receipts')
+            .upload(receipt.storage_path, small, {
+              upsert: true,
+              contentType: 'image/jpeg',
+            });
+          if (shrinkUploadError) {
+            logger.warn('register: shrink upload failed (keeping original)', {
+              err: shrinkUploadError,
+              storage_path: receipt.storage_path,
+            });
+          }
+        } catch (shrinkErr) {
+          logger.warn('register: shrink skipped (best-effort)', { err: shrinkErr });
+        }
+      }
+
       return response.status(200).json({
         success: true,
         deal_id: dealResult.dealId,
