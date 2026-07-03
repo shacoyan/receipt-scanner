@@ -98,7 +98,7 @@ export const config = {
 const STORE_NORMALIZATION_RULES = [
   // セブンイレブン系（OCR 誤読・ハイフン揺れ U+2010/U+2012/U+2013/U+2014/U+2015/U+2212/全角ダッシュ 吸収）
   {
-    pattern: /^(セブン[‐ー\-–—−]?イレブン|7[-\s]?Eleven|SEVEN[-\s]?ELEVEN|アブゾー?イレブン|アブ[・･]?セブン[‐ー\-–—−]?イレブン|アクセブン[ー\-]?イレブン)/i,
+    pattern: /^(セブン[‐ー\-–—−]?イレブン|7[-\s]?Eleven|SEVEN[-\s]?ELEVEN|アブゾー?イレブン|アブ[・･]?セブン[‐ー\-–—−]?イレブン|アクセブン[ー\-]?イレブン|ザ[・･\s]?セブン[‐ー\-–—−]?イレブン|デイセブン[‐ー\-–—−]?イレブン|アブアブ[‐ー\-–—−]?イレブン|アフィラ[・･\s]?セブン|アブーズ[・･\s]?イルワン)/i,
     normalized: 'セブンイレブン',
   },
   // ファミリーマート系
@@ -151,6 +151,14 @@ const STORE_NORMALIZATION_RULES = [
   { name: 'donki', pattern: /ドン[・･\s]?キホーテ/, normalized: 'ドン・キホーテ', replaceMode: 'full' },
   // カクヤス系（株式会社有無・スペース揺れを統一し partner 分裂防止 / replaceMode full）
   { name: 'kakuyasu', pattern: /カクヤス/, normalized: 'カクヤス', replaceMode: 'full' },
+  // 個別店舗正規化（notation-P2 / freee 実登録 partner 名に 1:1 で寄せる・全て replaceMode full）
+  { name: 'kubei', pattern: /^(海の(食堂|貴賓)[\s　]*)?久兵衛$/, normalized: '久兵衛', replaceMode: 'full' },
+  { name: 'tacoyacoco', pattern: /たこ焼き居酒屋[\s　]*TACOYAcoco/i, normalized: 'たこ焼き居酒屋 TACOYAcoco (タコヤココ)', replaceMode: 'full' },
+  { name: 'kaldi', pattern: /カルディ[\s　]*コーヒー[\s　]*ファーム/, normalized: 'カルディ', replaceMode: 'full' },
+  // Thai Market（英字表記）→ タイマーケット。^Thai アンカーで tai食材専門店 と非衝突・エントリ5 より前に配置
+  { name: 'thaimarket', pattern: /^Thai[\s　]*Market[\s　]+タイマーケット/i, normalized: 'タイマーケット', replaceMode: 'full' },
+  { name: 'thaimarket_jp', pattern: /^タイ食材専門店[\s　]+タイマーケット$/, normalized: 'タイ食材専門店タイマーケット', replaceMode: 'full' },
+  { name: 'daiso_danzen', pattern: /^だんぜん[!！]?ダイソー$/, normalized: 'ダイソー', replaceMode: 'full' },
 ];
 
 /**
@@ -239,10 +247,11 @@ export default async function handler(req, res) {
     const supabase = await getSupabase();
 
     // Fetch up to 10 pending receipts (oldest first)
-    // P1-5: ループは id/storage_path/mime_type の 3 列のみ使用 → select を限定し cron 帯域削減。
+    // P1-5: ループは id/storage_path/mime_type/created_at のみ使用 → select を限定し cron 帯域削減。
+    //       created_at は DATE-P2 未来日ゲート（アップロード日基準）で使用。
     const { data: pendingReceipts, error: fetchError } = await supabase
       .from('receipts')
-      .select('id, storage_path, mime_type')
+      .select('id, storage_path, mime_type, created_at')
       .eq('status', 'pending')
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
@@ -424,6 +433,22 @@ export default async function handler(req, res) {
           }
         }
 
+        // S3-gate: 自社・関連法人の宛名を店名として誤抽出した疑いを人手確認へ回す。
+        // EXCLUDED_STORES（exact 自社店舗名）は上で先に捕捉済み → ここでは OCR 誤読変種と関連法人名のみ拾う。
+        // ★ EXCLUDED とは別文言（削除誘導ではなく手動確認誘導）。経費レシートを誤って捨てさせないための区別。
+        if (resultJson.store) {
+          const ADDRESSEE_MISREAD_PATTERNS = [/KI(TS?|J)UNE/i, /\bIOBT\b/i, /\bSABABA\b/i, /\bISEDAI\b/i, /\bYATA\b/i, /^ヤタ$/];
+          const isAddresseeMisread = ADDRESSEE_MISREAD_PATTERNS.some(re => re.test(resultJson.store));
+          if (isAddresseeMisread) {
+            await supabase
+              .from('receipts')
+              .update({ status: 'error', result_json: resultJson, error_message: `宛名を店名として誤抽出した疑いがあります（${resultJson.store}）。発行者を手動確認してください` })
+              .eq('id', receipt.id);
+            errors++;
+            continue;
+          }
+        }
+
         // 必須項目チェック: date, amount, store が取れなければエラー
         const missing = [];
         if (!resultJson.date) missing.push('日付');
@@ -570,6 +595,27 @@ export default async function handler(req, res) {
           }
         }
 
+        // AMT-4: 暦日実在性チェック（Invalid Date すり抜け穴の修正）
+        // new Date('2026-02-29') は Invalid Date になり、後続の範囲比較が NaN で全 false となりすり抜ける。
+        // YYYY-MM-DD を strict パースし、その月の末日を超える非実在日を確定的に error 化する。
+        if (resultJson.date) {
+          const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(resultJson.date);
+          if (dm) {
+            const y = Number(dm[1]);
+            const mo = Number(dm[2]);
+            const d = Number(dm[3]);
+            const lastDay = mo >= 1 && mo <= 12 ? new Date(y, mo, 0).getDate() : 0;
+            if (mo < 1 || mo > 12 || d < 1 || d > lastDay) {
+              await supabase
+                .from('receipts')
+                .update({ status: 'error', result_json: resultJson, error_message: `日付が実在しません（${resultJson.date}）` })
+                .eq('id', receipt.id);
+              errors++;
+              continue;
+            }
+          }
+        }
+
         // 日付範囲チェック: 前後1年以内
         if (resultJson.date) {
           const now = new Date();
@@ -580,6 +626,24 @@ export default async function handler(req, res) {
             await supabase
               .from('receipts')
               .update({ status: 'error', result_json: resultJson, error_message: `日付が範囲外です（${resultJson.date}）` })
+              .eq('id', receipt.id);
+            errors++;
+            continue;
+          }
+        }
+
+        // DATE-P2: 未来日ゲート（アップロード日より未来の発行日を error）
+        // レシートは購入後にアップロードされる物理制約があるため、正読なら date ≤ upload。
+        // created_at（DB のアップロード時刻）を JST 日付へ正規化し、発行日 JST が厳密に超える（>）場合のみ error。
+        // same-day アップロードの正読を誤爆させないため等値は通す。created_at 未取得なら発動しない（後方互換）。
+        if (resultJson.date && receipt.created_at) {
+          const uploadJstDate = new Date(new Date(receipt.created_at).getTime() + 9 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10);
+          if (resultJson.date > uploadJstDate) {
+            await supabase
+              .from('receipts')
+              .update({ status: 'error', result_json: resultJson, error_message: `日付がアップロード日より未来です（${resultJson.date}、アップロード日: ${uploadJstDate}）` })
               .eq('id', receipt.id);
             errors++;
             continue;

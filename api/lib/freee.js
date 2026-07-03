@@ -84,11 +84,30 @@ export async function findOrCreatePartner(companyId, store) {
     return { partnerId: null, error: '取引先の検索に失敗しました' };
   }
   const searchData = await searchRes.json();
-  const exact = (searchData.partners || []).find((p) => p.name === store);
+  const partners = searchData.partners || [];
+  const exact = partners.find((p) => p.name === store);
   if (exact) {
     return { partnerId: exact.id };
   }
-  // 完全一致なし → 新規作成
+  // 完全一致なし → 近似重複ガード（partner マスタ汚染の抑止）
+  // 等価判定は 2 操作のみに厳格限定: (1) 全角/半角スペース全除去 (2) 先頭または末尾の「株式会社」除去
+  // 編集距離・部分一致等の曖昧マッチは一切行わない。
+  const norm = (s) =>
+    (s || '')
+      .replace(/[\s　]/g, '')
+      .replace(/^株式会社/, '')
+      .replace(/株式会社$/, '');
+  const normStore = norm(store);
+  const candidates = partners.filter((p) => norm(p.name) === normStore);
+  if (candidates.length === 1) {
+    logger.info('freee: near-match partner adopted', {
+      predicted: store,
+      adopted: candidates[0].name,
+      partner_id: candidates[0].id,
+    });
+    return { partnerId: candidates[0].id };
+  }
+  // 候補が 0 件 または 2 件以上（曖昧）→ 従来通り新規作成（挙動不変）
   const createRes = await freeeApiFetch('https://api.freee.co.jp/api/1/partners', {
     method: 'POST',
     headers: {
