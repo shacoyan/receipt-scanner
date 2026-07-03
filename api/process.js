@@ -4,6 +4,61 @@ import { logger } from './lib/logger.js';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Wave3 ログ観測モード（error 化せず件数実測のみ・挙動完全不変）。
+ * Stage2B で追加した新フィールド（tendered_amount/change_amount/tax_breakdown/tax_exempt_hint）と
+ * 既存 splits を使い、将来ハードゲート化する候補の「発火」を logger に記録するだけ。
+ * status/DB は一切触らない。本番ログを `wave3-observe` で grep して実発火率を集計し、
+ * FP 率確認（＋TAX-3 は税理士のテンプレ計上規約=TAX-5 確定）後に error 化へ段階昇格する。
+ * @param {object} parsed      生 OCR JSON（新フィールドを含む）
+ * @param {object} resultJson  ホワイトリスト済み結果（amount/tax_code/splits 等）
+ * @param {string|number} receiptId
+ */
+function wave3Observe(parsed, resultJson, receiptId) {
+  try {
+    const fired = [];
+    const amount = resultJson.amount;
+    const splits = Array.isArray(resultJson.splits) ? resultJson.splits : [];
+
+    // TAX-3(1): split の description が「8%/軽減」なのに tax_code=136(10%) = 自己矛盾（8%税額行→10%split捏造疑い）
+    const RE8 = /(^|[^0-9０-９])[8８]\s*[%％]|軽減/; // 8%/８％を拾い 18%/28% 等の連桁は除外
+    const t3 = splits.filter((s) => s && s.tax_code === 136 && typeof s.description === 'string' && RE8.test(s.description));
+    if (t3.length > 0) fired.push({ gate: 'TAX-3.1_desc_taxcode_contradiction', detail: t3.map((s) => s.description) });
+
+    // AMT-2(a): お預り − お釣り ≠ 合計（金額誤読の検算）。分割決済(payment_amounts 複数)は除外。
+    const tendered = parsed && typeof parsed.tendered_amount === 'number' ? parsed.tendered_amount : null;
+    const change = parsed && typeof parsed.change_amount === 'number' ? parsed.change_amount : null;
+    const multiPay = parsed && Array.isArray(parsed.payment_amounts) && parsed.payment_amounts.length >= 2;
+    if (tendered != null && change != null && typeof amount === 'number' && !multiPay && amount !== tendered - change) {
+      fired.push({ gate: 'AMT-2a_tendered_change_mismatch', detail: { amount, tendered, change, expected: tendered - change } });
+    }
+
+    // AMT-2(b): tax_breakdown 内訳合計 vs 合計（±2円超で乖離＝桁誤読/ハルシネーション疑い）。補助フィールド由来のため誤読も混じる観測用。
+    if (parsed && Array.isArray(parsed.tax_breakdown) && typeof amount === 'number') {
+      let sum = 0; let any = false;
+      for (const b of parsed.tax_breakdown) {
+        if (!b) continue;
+        const ta = typeof b.taxable_amount === 'number' ? b.taxable_amount : 0;
+        const tx = b.inclusive === false && typeof b.tax_amount === 'number' ? b.tax_amount : 0;
+        sum += ta + tx; if (ta) any = true;
+      }
+      if (any && Math.abs(sum - amount) > 2) fired.push({ gate: 'AMT-2b_tax_breakdown_sum_mismatch', detail: { amount, sum } });
+    }
+
+    // TAX-6: 非課税/対象外印字あり(tax_exempt_hint) だが 136/163 で計上（非課税品の課税誤登録疑い）。
+    if (parsed && parsed.tax_exempt_hint === true && (resultJson.tax_code === 136 || resultJson.tax_code === 163)) {
+      fired.push({ gate: 'TAX-6_tax_exempt_but_taxable', detail: { tax_code: resultJson.tax_code } });
+    }
+
+    if (fired.length > 0) {
+      logger.info('wave3-observe: gate would fire (log-only, no block)', { receiptId, store: resultJson.store, fired });
+    }
+  } catch (e) {
+    // 観測は本流を絶対に止めない
+    logger.warn('wave3-observe: skipped due to error', { receiptId, err: e && e.message });
+  }
+}
+
+/**
  * Anthropic /v1/messages を叩く。429 / 529 / 5xx を指数バックオフでリトライ。
  * 成功時は Response オブジェクト（response.ok === true）を返す。
  * リトライを尽くした最後の応答が ok でない場合は、従来と同一形式のエラーを throw する。
@@ -414,6 +469,9 @@ export default async function handler(req, res) {
         if (normalizedSplits) {
           resultJson.splits = normalizedSplits;
         }
+
+        // Wave3 ログ観測（挙動不変・error 化なし・件数実測のみ）。ハードゲート昇格は本番ログの FP 率確認後。
+        wave3Observe(parsed, resultJson, receipt.id);
 
         // 除外店舗チェック（Claudeが見逃した場合のフォールバック）
         const DEFAULT_EXCLUDED_STORES = ['吸暮', 'スーク', 'souq', 'goodbye', '金魚', 'LR', 'moumou', 'こまいぬ', 'KITUNE', 'ミヤウチ', 'キシブチ', 'ハトマ', 'ヤマト', 'シマツ'];
